@@ -1,6 +1,20 @@
-# WorkWell - 好好工作
+# WorkWell
+
+<div align="center">
+
+![WorkWell Icon](icon.png)
+
+**🍅 好好工作，好好休息**
 
 一个帮助你规律工作和休息的 macOS 菜单栏应用，具有可配置的"强制休息"功能和精美的界面设计。
+
+[![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
+[![Platform](https://img.shields.io/badge/platform-macOS%2013.0+-blue.svg)](https://www.apple.com/macos)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+[English](README_EN.md) | 简体中文
+
+</div>
 
 ## ✨ 功能特性
 
@@ -10,13 +24,13 @@
 - 🌴 自定义长休息（默认 15 分钟）
 - 🔄 可配置长休息间隔（每 N 个番茄后）
 - ⏸️ 支持暂停和继续功能
-- ⏰ 工作时菜单栏实时显示倒计时
+- ⏰ 工作时菜单栏实时显示倒计时（系统默认颜色）
 
 ### 🎨 精美界面设计
-- 🎨 柔和的配色方案，专注时使用舒适的青蓝色
+- 🎨 现代化 SwiftUI 界面
 - 📊 圆形进度条可视化显示
 - 🔔 工作完成时的友好提醒界面
-- 🍃 平静专注的视觉体验，避免焦虑感
+- 🎯 自适应深色/浅色模式
 
 ### 🔒 强制休息机制
 两种强度级别：
@@ -39,14 +53,18 @@
 
 ### 系统要求
 - macOS 13.0 (Ventura) 或更高版本
-- Swift 5.9 或更高版本
-- Xcode 15.0+（仅开发需要）
+- Swift 5.9 或更高版本（仅开发需要）
+
+### 📦 下载 Release 版本（推荐）
+
+> 即将在 GitHub Releases 提供
 
 ### 从源码构建
 
 ```bash
-# 1. 克隆或下载项目
-cd /path/to/timeout
+# 1. 克隆仓库
+git clone https://github.com/lyhsir/workwell.git
+cd workwell
 
 # 2. 构建项目
 swift build
@@ -55,7 +73,51 @@ swift build
 swift run WorkWell
 ```
 
-### 使用启动脚本（推荐）
+### 构建 Release 版本
+
+```bash
+# 编译 Release 版本
+swift build -c release
+
+# 打包为 .app
+mkdir -p build/Release/WorkWell.app/Contents/{MacOS,Resources}
+cp .build/arm64-apple-macosx/release/WorkWell build/Release/WorkWell.app/Contents/MacOS/
+cp Sources/Timeout/Timeout-16.png build/Release/WorkWell.app/Contents/Resources/
+cp WorkWell.icns build/Release/WorkWell.app/Contents/Resources/AppIcon.icns
+
+# 创建 Info.plist
+cat > build/Release/WorkWell.app/Contents/Info.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>WorkWell</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.workwell.timer</string>
+    <key>CFBundleName</key>
+    <string>WorkWell</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# 运行应用
+open build/Release/WorkWell.app
+```
+
+### 使用启动脚本
 
 ```bash
 # 一键构建并运行
@@ -69,7 +131,7 @@ swift run WorkWell
 swift package generate-xcodeproj
 
 # 在 Xcode 中打开
-open Timeout.xcodeproj
+open WorkWell.xcodeproj
 ```
 
 ## 📖 使用指南
@@ -77,13 +139,12 @@ open Timeout.xcodeproj
 ### 基本使用流程
 
 1. **启动应用** 🚀
-   - 应用启动后会出现在菜单栏，显示番茄图标
-   - 点击图标打开控制面板
+   - 应用启动后会出现在菜单栏
+   - 点击 WorkWell 图标打开控制面板
 
 2. **开始工作** ⏰
    - 点击"开始工作"按钮开始倒计时
    - 菜单栏会实时显示剩余时间（如 `24:59`）
-   - 界面显示柔和的青蓝色进度条
 
 3. **工作中** 🎯
    - 可以随时暂停计时
@@ -99,13 +160,6 @@ open Timeout.xcodeproj
    - 全屏显示休息界面
    - 显示剩余休息时间
    - 休息结束后自动恢复
-
-### 界面颜色说明
-
-- 🔵 **工作中**：柔和的青蓝色 - 平静专注
-- 💛 **暂停中**：温和的黄色 - 暂时停歇
-- 💚 **休息中**：舒适的绿色 - 放松身心
-- 🔴 **跳过请求**：红色 - 需要确认
 
 ### 配置选项
 
@@ -132,20 +186,23 @@ open Timeout.xcodeproj
 - **UI 框架**：SwiftUI
 - **系统框架**：AppKit（菜单栏集成）
 - **数据存储**：UserDefaults
+- **构建工具**：Swift Package Manager
 
 ### 项目结构
 ```
-timeout/
+workwell/
 ├── Sources/Timeout/
 │   ├── main.swift              # 应用入口和菜单栏管理
 │   ├── TimerManager.swift      # 计时器核心逻辑
 │   ├── TimerView.swift         # 主界面视图
 │   ├── BreakWindow.swift       # 全屏休息窗口
-│   └── BreakWarningWindow.swift # 工作完成提醒
+│   ├── BreakWarningWindow.swift # 工作完成提醒
+│   └── Timeout-16.png          # 菜单栏图标（16x16）
 ├── Package.swift               # Swift Package 配置
+├── icon.png                    # 应用图标源文件（1024x1024）
+├── WorkWell.icns               # 应用图标（60KB）
 ├── run.sh                      # 启动脚本
-└── Resources/
-    └── Timeout-16.png          # 应用图标
+└── README.md                   # 项目文档
 ```
 
 ### 核心组件
@@ -162,8 +219,13 @@ timeout/
 
 **AppDelegate**：系统集成
 - 菜单栏图标管理
-- 工作时显示倒计时
+- 工作时显示倒计时（系统默认颜色）
 - 窗口生命周期管理
+
+### 应用大小
+- 可执行文件：607KB
+- 应用图标：60KB
+- 总大小：约 680KB
 
 ## 🔒 隐私和安全
 
@@ -181,7 +243,7 @@ timeout/
 ### 注意事项
 ⚠️ **重要提示**：
 1. 这不是真正的系统锁，可以通过活动监视器强制退出
-2. 遇到紧急情况时，可以通过活动监视器强制退出 Timeout 进程
+2. 遇到紧急情况时，可以通过活动监视器强制退出 WorkWell 进程
 3. 统计数据存储在 UserDefaults，卸载应用会丢失数据
 
 ## 🔧 故障排除
@@ -200,10 +262,11 @@ timeout/
 
 ### 图标显示问题
 - 清理构建缓存：`rm -rf .build && swift build`
+- 确保图标文件在 `Sources/Timeout/Timeout-16.png`
 
 ## 📚 文档
 
-- **[设计文档](DESIGN_DOCUMENT.md)** - 完整的设计规范和 Windows 移植指南
+- **[设计文档](DESIGN_DOCUMENT.md)** - 完整的设计规范
 - **[使用说明](USAGE.md)** - 详细的使用教程
 - **[开发文档](DEVELOPMENT.md)** - 开发者指南和架构说明
 - **[项目总结](PROJECT_SUMMARY.md)** - 项目概览和技术栈
@@ -215,9 +278,10 @@ timeout/
 - [x] 强制休息机制
 - [x] 统计数据追踪
 - [x] 菜单栏倒计时显示
-- [x] 精美的配色设计
+- [x] 现代化 SwiftUI 界面
 - [x] 应用图标集成
 - [x] 可配置的设置选项
+- [x] 自适应深色/浅色模式
 
 ### 未来改进 🚀
 - [ ] 数据导出功能（CSV/JSON）
@@ -226,7 +290,6 @@ timeout/
 - [ ] 统计图表和趋势分析
 - [ ] 通知提醒集成
 - [ ] 音效和声音提示
-- [ ] 主题定制（浅色/深色）
 - [ ] 多语言支持
 
 ## 📄 许可证
@@ -244,10 +307,16 @@ MIT License - 自由使用和修改
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 开启 Pull Request
 
-## 🌟 致谢
+## 🌟 Star History
 
-感谢所有为这个项目做出贡献的人！
+如果这个项目对你有帮助，请给一个 ⭐️ Star！
 
 ---
 
+<div align="center">
+
 **享受高效的工作时间！** 🍅⏰
+
+Made with ❤️ by [lyhsir](https://github.com/lyhsir)
+
+</div>
