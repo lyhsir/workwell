@@ -325,19 +325,19 @@ struct BreakScreenView: View {
     private var backgroundView: some View {
         Group {
             if intensity == .exitable {
-                // 可退出：蓝绿色渐变，清新
+                // 可退出：灰色渐变，平静
                 ZStack {
                     LinearGradient(
-                        colors: [Color.blue.opacity(0.7), Color.green.opacity(0.7)],
+                        colors: [Color.gray.opacity(0.8), Color.gray.opacity(0.95)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
-                    
+
                     // 添加一些装饰性圆圈
                     Circle()
                         .fill(
                             RadialGradient(
-                                colors: [Color.blue.opacity(0.1), Color.clear],
+                                colors: [Color.gray.opacity(0.2), Color.clear],
                                 center: .center,
                                 startRadius: 50,
                                 endRadius: 300
