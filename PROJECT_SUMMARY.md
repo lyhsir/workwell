@@ -1,14 +1,15 @@
-# Timeout 番茄钟应用 - 项目总结
+# WorkWell 番茄钟应用 - 项目总结
 
 ## ✅ 已完成功能
 
 ### 核心功能
-- ✅ 菜单栏集成（🍅 图标）
+- ✅ 菜单栏集成（应用图标）
 - ✅ 工作计时器（25 分钟）
 - ✅ 自动休息提醒（5 分钟）
 - ✅ 长休息支持（每 4 个番茄）
 - ✅ 暂停/继续/停止功能
 - ✅ 进度显示（倒计时 + 进度条）
+- ✅ 菜单栏实时倒计时（系统默认颜色）
 
 ### 统计功能
 - ✅ 今日番茄数统计
@@ -17,11 +18,11 @@
 - ✅ 本地数据持久化
 
 ### 强制休息
-- ✅ 三种强度级别（轻度/中度/重度）
+- ✅ 两种强度级别（可退出/不可退出）
 - ✅ 全屏遮罩显示
 - ✅ 呼吸练习动画
 - ✅ 休息建议轮播
-- ✅ 快捷键拦截（中度及以上）
+- ✅ 快捷键拦截
 - ✅ 跳过休息选项（可配置）
 - ✅ 跳过原因记录（可选）
 - ✅ 跳过延迟机制（防误触）
@@ -36,6 +37,13 @@
 - ✅ 跳过原因要求
 - ✅ 跳过延迟设置
 
+### 界面特性
+- ✅ 现代化 SwiftUI 界面
+- ✅ 自适应深色/浅色模式
+- ✅ 流畅动画效果
+- ✅ 圆形进度条
+- ✅ 固定宽度防止抖动
+
 ## 📁 项目文件
 
 ### 源代码
@@ -43,16 +51,25 @@
 - `Sources/Timeout/TimerManager.swift` - 计时器逻辑
 - `Sources/Timeout/TimerView.swift` - 主界面视图
 - `Sources/Timeout/BreakWindow.swift` - 休息窗口
+- `Sources/Timeout/BreakWarningWindow.swift` - 工作完成提醒
+
+### 资源文件
+- `icon.png` - 应用图标源文件 (6.2KB, 1024x1024)
+- `WorkWell.icns` - 应用图标 (60KB)
+- `Sources/Timeout/Timeout-16.png` - 菜单栏图标 (1.7KB, 16x16)
 
 ### 文档
 - `README.md` - 项目介绍和功能说明
 - `USAGE.md` - 快速使用指南
 - `DEVELOPMENT.md` - 开发文档
+- `DESIGN_DOCUMENT.md` - Windows 移植设计文档
+- `PROJECT_SUMMARY.md` - 本文件
+- `LICENSE` - MIT 许可证
 
 ### 工具脚本
 - `run.sh` - 启动脚本
 - `test.sh` - 测试脚本
-- `.gitignore` - Git 忽略规则
+- `build.sh` - 构建脚本
 
 ## 🎯 使用方法
 
@@ -64,19 +81,34 @@
 ### 手动启动
 ```bash
 swift build
-swift run Timeout
+swift run WorkWell
 ```
 
 ### 停止应用
 ```bash
-pkill -f Timeout
+pkill -9 WorkWell
+```
+
+### 构建 Release 版本
+```bash
+# 编译
+swift build -c release
+
+# 打包 .app
+mkdir -p build/Release/WorkWell.app/Contents/{MacOS,Resources}
+cp .build/arm64-apple-macosx/release/WorkWell build/Release/WorkWell.app/Contents/MacOS/
+cp Sources/Timeout/Timeout-16.png build/Release/WorkWell.app/Contents/Resources/
+cp WorkWell.icns build/Release/WorkWell.app/Contents/Resources/AppIcon.icns
+
+# 运行
+open build/Release/WorkWell.app
 ```
 
 ## 🎨 界面预览
 
 ### 主界面
-- 菜单栏图标：🍅
-- 倒计时显示：25:00
+- 菜单栏图标：应用图标
+- 倒计时显示：25:00（系统默认颜色）
 - 状态指示：准备开始/工作中/已暂停/休息时间
 - 进度条：可视化显示剩余时间
 - 统计信息：今日番茄、专注时长、连续天数
@@ -102,8 +134,14 @@ pkill -f Timeout
    - 固定宽度防止界面抖动
    - 等宽数字字体
    - 流畅的动画效果
+   - 系统默认颜色自适应主题
 
-4. **安全考虑**
+4. **图标优化**
+   - 使用小尺寸源文件（6.2KB）生成 .icns
+   - 最终应用图标仅 60KB
+   - 应用总大小约 680KB
+
+5. **安全考虑**
    - 不修改系统设置
    - 不收集敏感数据
    - 提供应急退出方式
@@ -111,17 +149,17 @@ pkill -f Timeout
 ## 📈 使用建议
 
 ### 初次使用
-1. 从轻度模式开始
+1. 从可退出模式开始
 2. 25/5 标准番茄钟
 3. 允许跳过休息（适应期）
 
 ### 适应后
-1. 升级到中度模式
+1. 升级到不可退出模式
 2. 禁用跳过休息
 3. 要求填写跳过原因
 
 ### 高级用户
-1. 使用重度模式
+1. 使用不可退出模式
 2. 自定义时间配置
 3. 添加跳过延迟
 
@@ -160,16 +198,39 @@ pkill -f Timeout
    - 当前使用 UserDefaults
    - 卸载应用会丢失数据
 
-## 🎉 结论
+## 📦 发布信息
 
-Timeout 番茄钟应用已经完成并可以正常使用。它提供了：
+### v1.0.0 (2026-03-21)
+**首次正式发布**
+
+**特性**:
 - 完整的番茄钟功能
 - 可配置的强制休息机制
 - 直观的用户界面
 - 详细的使用统计
+- 自适应深色/浅色模式
+- 优化的应用图标
 
-应用已经过测试，界面抖动问题已修复，可以投入日常使用。
+**应用大小**: 680KB
+**系统要求**: macOS 13.0+
+
+**下载**: https://github.com/lyhsir/workwell/releases/tag/v1.0.0
+
+## 🎉 结论
+
+WorkWell 番茄钟应用已经完成并可以正常使用。它提供了：
+- 完整的番茄钟功能
+- 可配置的强制休息机制
+- 直观的用户界面
+- 详细的使用统计
+- 自适应的主题支持
+- 优化的性能和体积
+
+应用已经过测试，界面流畅，可以投入日常使用。
 
 ---
 
 **开始使用：`./run.sh`** 🍅
+
+**GitHub**: https://github.com/lyhsir/workwell
+**许可证**: MIT License

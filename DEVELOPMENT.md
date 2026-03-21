@@ -1,4 +1,4 @@
-# Timeout 开发文档
+# WorkWell 开发文档
 
 ## 🏗️ 项目结构
 
@@ -8,13 +8,18 @@ timeout/
 ├── README.md                        # 项目说明
 ├── USAGE.md                         # 使用指南
 ├── DEVELOPMENT.md                   # 本文件
-├── run.sh                          # 启动脚本
+├── LICENSE                          # MIT 许可证
+├── icon.png                         # 应用图标源文件
+├── WorkWell.icns                    # 应用图标 (60KB)
+├── run.sh                           # 启动脚本
 └── Sources/
-    └── Timeout/
+    └── Timeout/                     # SPM Target 名称
         ├── main.swift              # 应用入口和 AppDelegate
         ├── TimerManager.swift      # 计时器逻辑管理
         ├── TimerView.swift         # 主界面视图
-        └── BreakWindow.swift       # 休息窗口和强制休息界面
+        ├── BreakWindow.swift       # 休息窗口
+        ├── BreakWarningWindow.swift # 工作完成提醒窗口
+        └── Timeout-16.png          # 菜单栏图标 (16x16)
 ```
 
 ## 🔧 技术栈
@@ -23,6 +28,7 @@ timeout/
 - **UI 框架**: SwiftUI
 - **系统框架**: AppKit
 - **最低系统**: macOS 13.0+
+- **构建工具**: Swift Package Manager
 
 ## 📋 核心组件说明
 
@@ -57,12 +63,20 @@ TimerView
 强制休息的全屏窗口。
 
 **强度级别**:
-- **Light**: 半透明渐变背景
-- **Medium**: 不透明遮罩 + 快捷键拦截
-- **Heavy**: 完全锁定界面
+- **Exitable**: 可随时退出
+- **Forced**: 必须等待休息时间结束
 
-### 4. AppDelegate (main.swift)
+### 4. BreakWarningWindow (BreakWarningWindow.swift)
+工作完成时的提醒窗口。
+
+### 5. AppDelegate (main.swift)
 管理应用生命周期和菜单栏集成。
+
+**关键功能**:
+- NSStatusItem 管理（菜单栏图标）
+- 工作时显示倒计时（系统默认颜色）
+- 弹出窗口管理
+- 图标加载（支持 Release/Debug 环境）
 
 ## 🚀 扩展指南
 
@@ -168,30 +182,84 @@ func testBreakWindow() {
 
 ## 📦 发布准备
 
-### 1. 创建签名证书
+### 1. 构建版本
+
+**Debug 版本（开发测试）**:
 ```bash
-# 在 Xcode 中配置开发者账号
-# Project Settings > Signing & Capabilities
+swift build
+swift run WorkWell
 ```
 
-### 2. 打包应用
+**Release 版本（生产发布）**:
 ```bash
-# 使用 Xcode Archive
-# 或使用命令行工具
-xcodebuild -scheme Timeout archive
+swift build -c release
+
+# 打包为 .app
+mkdir -p build/Release/WorkWell.app/Contents/{MacOS,Resources}
+cp .build/arm64-apple-macosx/release/WorkWell build/Release/WorkWell.app/Contents/MacOS/
+cp Sources/Timeout/Timeout-16.png build/Release/WorkWell.app/Contents/Resources/
+cp WorkWell.icns build/Release/WorkWell.app/Contents/Resources/AppIcon.icns
+
+# 创建 Info.plist
+cat > build/Release/WorkWell.app/Contents/Info.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>WorkWell</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.workwell.timer</string>
+    <key>CFBundleName</key>
+    <string>WorkWell</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
+EOF
+
+# 打包为 zip
+cd build/Release
+zip -r WorkWell-v1.0.0.zip WorkWell.app
 ```
 
-### 3. 公测分发
-- GitHub Releases
-- Homebrew Cask
-- 直接下载
+### 2. 分发方式
 
-### 4. App Store 发布
+**GitHub Releases**:
+- 上传 WorkWell-vX.X.X.zip
+- 自动生成下载链接
+
+**Homebrew Cask**:
+```ruby
+# workwell.rb
+cask "workwell" do
+  version "1.0.0"
+  sha256 "..."
+  url "https://github.com/lyhsir/workwell/releases/download/v#{version}/WorkWell-#{version}.zip"
+  name "WorkWell"
+  desc "番茄钟应用"
+  homepage "https://github.com/lyhsir/workwell"
+  app "WorkWell.app"
+end
+```
+
+### 3. App Store 发布
 需要修改：
 - 移除某些"强制"功能（审核问题）
 - 添加隐私政策
 - 完善帮助文档
 - 准备截图和预览视频
+- 代码签名
 
 ## 🔒 安全和权限
 
@@ -234,6 +302,26 @@ chore: 构建/工具变更
 - 测试睡眠/唤醒场景
 - 测试多显示器场景
 
+## 🔧 图标管理
+
+### 创建/更新图标
+
+**生成 .icns 文件**:
+```bash
+# 从 icon.png (1024x1024) 生成
+rm -rf WorkWell.iconset && mkdir -p WorkWell.iconset
+sips -z 16 16     icon.png --out WorkWell.iconset/icon_16x16.png
+sips -z 32 32     icon.png --out WorkWell.iconset/icon_16x16@2x.png
+sips -z 32 32     icon.png --out WorkWell.iconset/icon_32x32.png
+# ... 其他尺寸
+iconutil -c icns WorkWell.iconset
+```
+
+**图标文件说明**:
+- `icon.png`: 源文件 (6.2KB, 1024x1024)
+- `WorkWell.icns`: 应用图标 (60KB)
+- `Timeout-16.png`: 菜单栏图标 (1.7KB, 16x16)
+
 ## 📚 参考资源
 
 - [SwiftUI 官方文档](https://developer.apple.com/documentation/swiftui)
@@ -244,7 +332,7 @@ chore: 构建/工具变更
 ## 🎯 路线图
 
 ### v1.1（计划中）
-- [ ] 数据导出功能
+- [ ] 数据导出功能（CSV/JSON）
 - [ ] 更多休息提示内容
 - [ ] 自定义快捷键
 - [ ] 音效选择
@@ -261,6 +349,14 @@ chore: 构建/工具变更
 - [ ] 团队协作功能
 - [ ] AI 智能建议
 
+## 🐛 已知问题
+
+1. **Switch default 分支警告**: TimerView.swift 中 switch 语句的 default 分支永远不会执行（可忽略）
+2. **系统限制**: 无法完全拦截系统级快捷键（如 Cmd+Opt+Esc）
+3. **睡眠处理**: 电脑睡眠时计时器会暂停
+
 ---
 
 欢迎贡献代码和想法！🎉
+
+**GitHub**: https://github.com/lyhsir/workwell

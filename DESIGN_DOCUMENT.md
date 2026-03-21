@@ -1,9 +1,10 @@
-# Timeout 应用设计文档
+# WorkWell 应用设计文档
 ## Windows 移植版本参考
 
-**文档版本**: 1.0
+**文档版本**: 1.1
 **创建日期**: 2026-03-21
-**原项目**: macOS 版本 Timeout 番茄钟应用
+**更新日期**: 2026-03-21
+**原项目**: macOS 版本 WorkWell 番茄钟应用（原名 Timeout）
 
 ---
 
@@ -23,15 +24,17 @@
 ## 1. 应用概述
 
 ### 1.1 产品定位
-Timeout 是一个帮助用户规律工作和休息的番茄钟应用，具有可配置的"强制休息"功能。
+WorkWell 是一个帮助用户规律工作和休息的番茄钟应用，具有可配置的"强制休息"功能。
 
 ### 1.2 核心特性
 - ✅ 番茄钟计时（工作 25 分钟 / 休息 5 分钟）
 - ✅ 可自定义的工作和休息时长
-- ✅ 强制休息机制（三种强度）
+- ✅ 强制休息机制（两种强度：可退出/不可退出）
 - ✅ 统计数据追踪
 - ✅ 灵活的配置选项
 - ✅ 系统托盘集成
+- ✅ 菜单栏倒计时显示
+- ✅ 自适应深色/浅色模式
 
 ### 1.3 目标用户
 - 需要专注工作时间的自由职业者
@@ -74,23 +77,17 @@ enum TimerState {
 #### 2.1.2 强制休息机制
 **优先级**: P0（必须）
 
-**三种强度级别**:
+**两种强度级别**:
 
-1. **轻度 (Light)**
+1. **可退出 (Exitable)**
    - 全屏提示窗口
-   - 声音提醒
-   - 可随时关闭
    - 显示休息建议和呼吸节奏
+   - 可随时关闭窗口
 
-2. **中度 (Medium)**
+2. **不可退出 (Forced)**
    - 不透明遮罩覆盖屏幕
-   - 限制系统快捷键（Win+L, Alt+F4, Esc 等）
+   - 限制系统快捷键
    - 显示倒计时
-   - 可跳过（需输入原因）
-
-3. **重度 (Heavy)**
-   - 完全不透明遮罩
-   - 最强快捷键限制
    - 禁止跳过休息
    - 紧急退出需要特殊操作
 
@@ -106,7 +103,7 @@ enum TimerState {
 - 常驻系统托盘
 - 托盘图标显示：
   - 空闲时：应用图标
-  - 工作时：倒计时时间
+  - 工作时：倒计时时间（系统默认颜色）
   - 休息时：休息图标
 - 单击打开控制面板
 - 右键菜单：
@@ -154,7 +151,7 @@ enum TimerState {
 #### 布局结构
 ```
 ┌─────────────────────────────────┐
-│ 🍅 Timeout              ⚙️ 设置 │  <- 标题栏
+│ 🍅 WorkWell             ⚙️ 设置 │  <- 标题栏
 ├─────────────────────────────────┤
 │                                 │
 │         ┌─────────────┐         │
@@ -185,10 +182,10 @@ enum TimerState {
 - 时间显示：36pt 等宽字体
 - 状态文本：灰色小字
 - 进度颜色：
-  - 工作中：橙色 (#FF9500)
-  - 暂停：黄色 (#FFCC00)
-  - 休息：绿色 (#34C759)
-  - 跳过请求：红色 (#FF3B30)
+  - 工作中：黑色
+  - 暂停：黄色
+  - 休息：绿色
+  - 跳过请求：红色
 
 **控制按钮**:
 - "开始工作"：主要按钮（蓝色）
@@ -225,7 +222,7 @@ enum TimerState {
 
 ### 3.3 休息窗口
 
-#### 轻度模式
+#### 可退出模式
 ```
 ┌─────────────────────────────────┐
 │                                 │
@@ -235,10 +232,10 @@ enum TimerState {
 │                                 │
 │  ┌─────────────────────────┐    │
 │  │ 建议活动：                │    │
-│  │ • 伸展运动                │    │
-│  │ • 远眺放松                │    │
-│  │ • 喝杯水                  │    │
-│  │ • 深呼吸（4-7-8）         │    │
+│  │ • 伸展运动                │
+│  │ • 远眺放松                │
+│  │ • 喝杯水                  │
+│  │ • 深呼吸（4-7-8）         │
 │  └─────────────────────────┘    │
 │                                 │
 │        呼吸节奏：                │
@@ -248,7 +245,7 @@ enum TimerState {
 └─────────────────────────────────┘
 ```
 
-#### 重度模式
+#### 不可退出模式
 ```
 ┌─────────────────────────────────┐
 │ █ 全屏遮罩，完全覆盖             │
@@ -277,8 +274,8 @@ enum TimerState {
 │                                 │
 │  ┌─────────────────────────┐    │
 │  │ 你可以：                 │    │
-│  │ • 立即开始休息            │    │
-│  │ • 继续工作（不推荐）      │    │
+│  │ • 立即开始休息            │
+│  │ • 继续工作（不推荐）      │
 │  └─────────────────────────┘    │
 │                                 │
 │    [继续工作]  [开始休息]       │
@@ -614,7 +611,7 @@ private checkAndUpdateConsecutiveDays() {
 var notifyIcon = new NotifyIcon()
 {
     Icon = new Icon("app.ico"),
-    Text = "Timeout",
+    Text = "WorkWell",
     Visible = true
 };
 
@@ -669,7 +666,7 @@ maskWindow.KeyDown += (s, e) => {
 
 ```typescript
 // 配置文件位置
-// Windows: %APPDATA%\Timeout\settings.json
+// Windows: %APPDATA%\WorkWell\settings.json
 
 interface AppConfig {
   settings: Settings;
@@ -679,7 +676,7 @@ interface AppConfig {
 // 保存配置
 function saveConfig(config: AppConfig) {
   const appDataPath = process.env.APPDATA;
-  const configPath = path.join(appDataPath, 'Timeout', 'settings.json');
+  const configPath = path.join(appDataPath, 'WorkWell', 'settings.json');
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }
 
@@ -698,7 +695,7 @@ function loadConfig(): AppConfig {
 
 ```csharp
 // 创建数据库
-using (var connection = new SQLiteConnection("Data Source=timeout.db"))
+using (var connection = new SQLiteConnection("Data Source=workwell.db"))
 {
   connection.Open();
 
@@ -736,13 +733,13 @@ using (var connection = new SQLiteConnection("Data Source=timeout.db"))
 const string keyName = @"Software\Microsoft\Windows\CurrentVersion\Run";
 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(keyName, true))
 {
-    key.SetValue("Timeout", Application.ExecutablePath);
+    key.SetValue("WorkWell", Application.ExecutablePath);
 }
 
 // 从启动项移除
 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(keyName, true))
 {
-    key.DeleteValue("Timeout", false);
+    key.DeleteValue("WorkWell", false);
 }
 ```
 
@@ -876,15 +873,15 @@ foreach (Screen screen in Screen.AllScreens)
 
 #### 第二步：搭建项目结构
 ```
-Timeout.Windows/
+WorkWell.Windows/
 ├── src/
-│   ├── Timeout.Core/           # 核心业务逻辑
-│   ├── Timeout.UI/             # 用户界面
-│   ├── Timeout.System/         # 系统集成
-│   └── Timeout.Data/           # 数据访问
+│   ├── WorkWell.Core/           # 核心业务逻辑
+│   ├── WorkWell.UI/             # 用户界面
+│   ├── WorkWell.System/         # 系统集成
+│   └── WorkWell.Data/           # 数据访问
 ├── tests/
-│   └── Timeout.Tests/          # 单元测试
-├── docs/                       # 文档
+│   └── WorkWell.Tests/          # 单元测试
+├── docs/                        # 文档
 └── README.md
 ```
 
@@ -932,7 +929,7 @@ Timeout.Windows/
 ```xml
 <!-- WiX 安装脚本示例 -->
 <Product Id="*"
-         Name="Timeout"
+         Name="WorkWell"
          Language="1033"
          Version="1.0.0.0"
          Manufacturer="Your Company">
@@ -940,12 +937,12 @@ Timeout.Windows/
 
   <Directory Id="TARGETDIR" Name="SourceDir">
     <Directory Id="ProgramFilesFolder">
-      <Directory Id="APPLICATIONFOLDER" Name="Timeout">
+      <Directory Id="APPLICATIONFOLDER" Name="WorkWell">
         <!-- 应用程序文件 -->
       </Directory>
     </Directory>
     <Directory Id="ProgramMenuFolder">
-      <Directory Id="ApplicationProgramsFolder" Name="Timeout"/>
+      <Directory Id="ApplicationProgramsFolder" Name="WorkWell"/>
     </Directory>
   </Directory>
 </Product>
@@ -955,17 +952,17 @@ Timeout.Windows/
 
 ```inno
 [Setup]
-AppName=Timeout
+AppName=WorkWell
 AppVersion=1.0
-DefaultDirName={pf}\Timeout
-DefaultGroupName=Timeout
+DefaultDirName={pf}\WorkWell
+DefaultGroupName=WorkWell
 
 [Files]
 Source: "bin\Release\*"; DestDir: "{app}"; Flags: recursesubdirs
 
 [Icons]
-Name: "{group}\Timeout"; Filename: "{app}\Timeout.exe"
-Name: "{commonstartup}\Timeout"; Filename: "{app}\Timeout.exe"
+Name: "{group}\WorkWell"; Filename: "{app}\WorkWell.exe"
+Name: "{commonstartup}\WorkWell"; Filename: "{app}\WorkWell.exe"
 ```
 
 ---
