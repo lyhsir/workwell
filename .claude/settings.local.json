@@ -147,7 +147,19 @@
       "Bash(git init)",
       "Bash(git add .)",
       "Bash(ls -la Sources/Timeout/ | grep -E \"\\\\\\\\.swift$\")",
-      "Bash(git add -A && git commit -m \"回滚到无多语言支持的稳定版本\n\n回滚到 95755e2 版本：\n- 只有灰色背景的休息界面\n- 无多语言功能\n- 简单稳定的版本\")"
+      "Bash(git add -A && git commit -m \"回滚到无多语言支持的稳定版本\n\n回滚到 95755e2 版本：\n- 只有灰色背景的休息界面\n- 无多语言功能\n- 简单稳定的版本\")",
+      "Bash(pkill -9 -f \"WorkWell$\" 2>/dev/null\nrm -rf .build\nswift build 2>&1 | tail -5)",
+      "Bash(swift run WorkWell)",
+      "Bash(/tmp/patch.swift:*)",
+      "Read(//tmp/**)",
+      "Bash(git checkout Sources/Timeout/main.swift)",
+      "Bash(ls -la Sources/Timeout/*.png)",
+      "Bash(find .build -name \"*.bundle\" -type d 2>/dev/null | head -5)",
+      "Bash(file Sources/Timeout/Timeout-16.png && xxd -l 4 Sources/Timeout/Timeout-16.png)",
+      "Bash(swift package dump-package | python3 -m json.tool | grep -A 30 '\"WorkWell\"')",
+      "Bash(cat > /tmp/package_patch.txt << 'EOF'\n        .executableTarget\\(\n            name: \"WorkWell\",\n            path: \"Timeout\",\n            dependencies: [],\n            resources: [\n                .copy\\(\"Timeout-16.png\"\\)\n            ],\n            swiftSettings: [\n                .unsafeFlags\\([\"-parse-as-library\"]\\)\n            ]\n        \\)\nEOF\ncat /tmp/package_patch.txt)",
+      "Bash(git checkout Package.swift && cat Package.swift)",
+      "Bash(git checkout Package.swift && mv Sources/Timeout Sources/WorkWell && ls -la Sources/)"
     ]
   }
 }

@@ -347,7 +347,7 @@ struct BreakScreenView: View {
                         .position(x: 200, y: 200)
                 }
             } else {
-                // 不可退出：深色背景，严肃
+                //不可退出：深色背景，严肃
                 Color.black.opacity(0.9)
                     .overlay(
                         VStack {
