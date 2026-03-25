@@ -207,15 +207,20 @@ class TimerManager: ObservableObject {
 
     func cancelBreak() {
         // 取消休息，恢复工作
-        print("↩️ cancelBreak: 恢复工作，savedTime=\(savedTimeBeforeBreak)")
+        print("↩️ cancelBreak: 恢复工作，savedTime=\(savedTimeBeforeBreak), currentState=\(currentState)")
         pendingBreak = false
 
-        // 恢复计时器
-        if currentState == .working && savedTimeBeforeBreak > 0 {
+        if savedTimeBeforeBreak > 0 {
+            // 工作被中断，恢复之前的工作时间
+            print("🔄 恢复被中断的工作，剩余时间：\(savedTimeBeforeBreak)秒")
             currentTime = savedTimeBeforeBreak
             savedTimeBeforeBreak = 0
             startTimer()
             print("✓ 已恢复工作计时")
+        } else {
+            // 工作已正常完成，开始新的工作周期
+            print("✨ 开始新的工作周期")
+            startWork()
         }
     }
 
