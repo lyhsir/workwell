@@ -39,6 +39,7 @@ class TimerManager: ObservableObject {
     @Published var allowSkipBreak: Bool = false
     @Published var skipBreakRequiresReason: Bool = false
     @Published var skipBreakDelaySeconds: Int = 0
+    @Published var autoStartWorkAfterBreak: Bool = false  // 新增：休息结束后自动开始工作
 
     private var timer: Timer?
     private var startTime: Date?
@@ -98,6 +99,11 @@ class TimerManager: ObservableObject {
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.saveSettings() }
             .store(in: &cancellables)
+
+        $autoStartWorkAfterBreak
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.saveSettings() }
+            .store(in: &cancellables)
     }
 
     private func saveSettings() {
@@ -110,6 +116,7 @@ class TimerManager: ObservableObject {
         defaults.set(allowSkipBreak, forKey: "allowSkipBreak")
         defaults.set(skipBreakRequiresReason, forKey: "skipBreakRequiresReason")
         defaults.set(skipBreakDelaySeconds, forKey: "skipBreakDelaySeconds")
+        defaults.set(autoStartWorkAfterBreak, forKey: "autoStartWorkAfterBreak")
     }
 
     private func loadSettings() {
@@ -127,6 +134,7 @@ class TimerManager: ObservableObject {
         allowSkipBreak = defaults.bool(forKey: "allowSkipBreak")
         skipBreakRequiresReason = defaults.bool(forKey: "skipBreakRequiresReason")
         skipBreakDelaySeconds = defaults.integer(forKey: "skipBreakDelaySeconds")
+        autoStartWorkAfterBreak = defaults.bool(forKey: "autoStartWorkAfterBreak")
     }
 
     func startWork() {
@@ -170,14 +178,14 @@ class TimerManager: ObservableObject {
     func breakNow() {
         // 立即休息 - 暂停工作，保存当前进度
         guard currentState == .working else { return }
-        
+
         print("📥 breakNow: 保存当前时间 \(currentTime)")
         savedTimeBeforeBreak = currentTime
         pendingBreak = true
-        
+
         // 暂停计时器，但保持工作状态
         stopTimer()
-        
+
         // 发送通知显示警告窗口，但不改变状态
         NotificationCenter.default.post(name: .showBreakWarning, object: nil)
     }
@@ -186,13 +194,13 @@ class TimerManager: ObservableObject {
         // 从警告窗口确认开始休息
         print("🌙 startBreakNow: 开始休息")
         guard currentState == .working else { return }
-        
+
         currentState = .breaking
-        
+
         // 计算休息时长
         let isLongBreak = completedPomodoros % longBreakInterval == 0
         currentTime = isLongBreak ? longBreakDuration : breakDuration
-        
+
         onBreakStart?()
         startTimer()
     }
@@ -201,7 +209,7 @@ class TimerManager: ObservableObject {
         // 取消休息，恢复工作
         print("↩️ cancelBreak: 恢复工作，savedTime=\(savedTimeBeforeBreak)")
         pendingBreak = false
-        
+
         // 恢复计时器
         if currentState == .working && savedTimeBeforeBreak > 0 {
             currentTime = savedTimeBeforeBreak
@@ -264,21 +272,26 @@ class TimerManager: ObservableObject {
     }
 
     func resumeFromBreak() {
-        // 从休息恢复到之前的工作状态
+        // 从休息恢复
         guard currentState == .breaking else { return }
-        
-        print("🔙 resumeFromBreak: 从休息恢复")
+
+        print("🔙 resumeFromBreak: 从休息恢复，autoStartWorkAfterBreak=\(autoStartWorkAfterBreak)")
         stopTimer()
-        
-        // 恢复之前的工作时间
+
+        // 恢复之前的工作时间（如果有的话）
         if savedTimeBeforeBreak > 0 {
+            // 中断工作后休息，恢复工作
             currentState = .working
             currentTime = savedTimeBeforeBreak
             savedTimeBeforeBreak = 0
             onWorkStart?()
             startTimer()
+        } else if autoStartWorkAfterBreak {
+            // 用户启用了自动开始，直接开始新的工作
+            print("✅ 自动开始新的工作周期")
+            startWork()
         } else {
-            // 如果没有保存的时间（正常完成工作），回到空闲状态
+            // 正常完成工作后休息，回到空闲状态等待用户操作
             currentState = .idle
             onTick?("🍅", false)
         }

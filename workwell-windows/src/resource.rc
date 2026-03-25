@@ -1,0 +1,41 @@
+//Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+IDI_APPICON ICON "WorkWell.ico"
+
+//
+// Version Information
+//
+1 VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "WorkWell"
+            VALUE "FileDescription", "强制休息番茄钟"
+            VALUE "FileVersion", "1.0.0.0"
+            VALUE "InternalName", "WorkWell"
+            VALUE "LegalCopyright", "Copyright (C) 2026"
+            VALUE "OriginalFilename", "WorkWell.exe"
+            VALUE "ProductName", "WorkWell"
+            VALUE "ProductVersion", "1.0.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

@@ -335,6 +335,9 @@ struct SettingsView: View {
                         .tag(intensity)
                     }
                 }
+
+                Toggle("休息结束后自动开始工作", isOn: $timerManager.autoStartWorkAfterBreak)
+                    .help("启用后，休息时间结束时会自动开始下一个工作周期")
             }
 
             Divider()
