@@ -1,0 +1,36 @@
+Start testing: Oct 24 18:26 中国标准时间
+----------------------------------------------------------
+1/1 Testing: TimerAndConfiguration
+1/1 Test: TimerAndConfiguration
+Command: "D:/develop/workwell-windows/build/bin/Release/WorkWellTests.exe"
+Directory: D:/develop/workwell-windows/build
+"TimerAndConfiguration" start time: Oct 24 18:26 中国标准时间
+Output:
+----------------------------------------------------------
+PASS: elapsed time counts delayed message delivery correctly
+PASS: pause freezes countdown
+PASS: resume continues countdown
+PASS: settings are deferred until next round
+PASS: warning fires at thirty seconds
+PASS: work transitions to a full five minute break
+PASS: completed work updates real daily statistics
+PASS: gentle mode postpones break for five minutes
+PASS: postponement does not count as another pomodoro
+PASS: break ends at exact duration and waits for user
+PASS: saved short break applies in next round
+PASS: strict mode rejects postponement
+PASS: fourth completed round triggers fifteen minute long break
+PASS: daily statistics survive restart
+PASS: configuration saves successfully
+PASS: configuration round trip
+PASS: malformed configuration is clamped safely
+All checks passed.
+<end of output>
+Test time =   0.13 sec
+----------------------------------------------------------
+Test Passed.
+"TimerAndConfiguration" end time: Oct 24 18:26 中国标准时间
+"TimerAndConfiguration" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Oct 24 18:26 中国标准时间

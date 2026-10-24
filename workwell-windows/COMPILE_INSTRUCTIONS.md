@@ -14,10 +14,10 @@
 2. **在 PowerShell 中编译**
    ```powershell
    cd D:\develop\workwell-windows
-   
+
    # 删除旧构建
    Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
-   
+
    # 重新编译
    mkdir build
    cd build

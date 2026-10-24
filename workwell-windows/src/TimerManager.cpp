@@ -1,134 +1,174 @@
 #include "TimerManager.h"
-
-TimerManager::TimerManager()
-    : m_state(TimerState::Stopped), m_remainingSeconds(0), m_totalSeconds(0),
-      m_warningShown(false), m_completedPomodoros(0)
+#include "ConfigManager.h"
+TimerManager::TimerManager(std::function<ULONGLONG()> clock, std::wstring statsPath)
+    : m_statsPath(statsPath), m_clock(clock ? clock : []() { return GetTickCount64(); })
 {
+    RefreshDay();
 }
-
-TimerManager::~TimerManager()
+void TimerManager::SetSettings(const Settings &value)
 {
+    m_settings = value;
+    m_settings.workDuration = std::clamp(value.workDuration, 60, 7200);
+    m_settings.shortBreakDuration = std::clamp(value.shortBreakDuration, 60, 1800);
+    m_settings.longBreakDuration = std::clamp(value.longBreakDuration, 60, 3600);
+    m_settings.pomodorosUntilLongBreak = std::clamp(value.pomodorosUntilLongBreak, 2, 10);
+    if (IsStopped())
+        m_remaining = m_total = m_settings.workDuration;
+    Notify();
 }
-
+void TimerManager::Notify()
+{
+    if (m_onTick)
+        m_onTick(m_remaining, m_state == TimerState::Working);
+}
 void TimerManager::StartWork(int seconds)
 {
+    if (!IsStopped())
+        return;
+    m_active = m_settings;
+    m_deferred = false;
+    m_remaining = m_total = std::max(1, seconds);
     m_state = TimerState::Working;
-    m_remainingSeconds = seconds;
-    m_totalSeconds = seconds;
-    m_warningShown = false;
+    m_warned = false;
+    m_lastTick = m_clock();
+    Notify();
 }
-
+int TimerManager::NextBreakSeconds() const
+{
+    const auto &s = ActiveSettings();
+    int next = m_completed + (!m_deferred && (m_state == TimerState::Working || IsPaused()) ? 1 : 0);
+    return next > 0 && next % s.pomodorosUntilLongBreak == 0 ? s.longBreakDuration : s.shortBreakDuration;
+}
 void TimerManager::StartBreak()
 {
+    if (IsInBreak())
+        return;
+    if (IsStopped())
+        m_active = m_settings;
+    m_remaining = m_total = m_completed > 0 && m_completed % m_active.pomodorosUntilLongBreak == 0
+                                ? m_active.longBreakDuration
+                                : m_active.shortBreakDuration;
     m_state = TimerState::Break;
-
-    // 根据已完成的番茄钟数决定休息时长
-    bool shouldUseLongBreak = (m_completedPomodoros > 0 && m_completedPomodoros % m_settings.pomodorosUntilLongBreak == 0);
-
-    m_remainingSeconds = shouldUseLongBreak ? m_settings.longBreakDuration : m_settings.shortBreakDuration;
-    m_totalSeconds = m_remainingSeconds;
-    m_warningShown = false;
-
+    m_lastTick = m_clock();
+    Notify();
     if (m_onBreakStart)
-    {
         m_onBreakStart();
-    }
 }
-
 void TimerManager::Pause()
 {
+    if (m_state != TimerState::Working)
+        return;
+    OnTick();
     if (m_state == TimerState::Working)
     {
         m_state = TimerState::Paused;
+        Notify();
     }
 }
-
 void TimerManager::Resume()
 {
-    if (m_state == TimerState::Paused)
-    {
-        m_state = TimerState::Working;
-    }
+    if (!IsPaused())
+        return;
+    m_state = TimerState::Working;
+    m_lastTick = m_clock();
+    Notify();
 }
-
 void TimerManager::Stop()
 {
+    if (IsInBreak())
+        return;
     m_state = TimerState::Stopped;
-    m_remainingSeconds = m_settings.workDuration;
-    m_totalSeconds = m_settings.workDuration;
-    m_warningShown = false;
+    m_deferred = false;
+    m_remaining = m_total = m_settings.workDuration;
+    Notify();
 }
-
 void TimerManager::OnTick()
 {
-    // 如果是停止状态，不执行任何操作
-    if (m_state == TimerState::Stopped)
+    RefreshDay();
+    if (IsStopped() || IsPaused())
+        return;
+    ULONGLONG now = m_clock();
+    int elapsed = static_cast<int>((now - m_lastTick) / 1000);
+    if (elapsed < 1)
+        return;
+    m_lastTick += static_cast<ULONGLONG>(elapsed) * 1000;
+    m_remaining = std::max(0, m_remaining - elapsed);
+    if (m_state == TimerState::Working && !m_warned && m_remaining <= 30 && m_remaining > 0)
     {
-        // 通知 UI 重置到初始状态
-        if (m_onTick)
-        {
-            m_onTick(m_remainingSeconds, false);
-        }
+        m_warned = true;
+        if (m_onWarning)
+            m_onWarning();
+    }
+    Notify();
+    if (m_remaining != 0)
+        return;
+    if (IsInBreak())
+    {
+        EndBreak();
         return;
     }
-
-    if (m_state == TimerState::Paused)
+    if (!m_deferred)
     {
-        return;
+        ++m_completed;
+        ++m_todayCount;
+        m_todaySeconds += m_total;
+        SaveStats();
     }
-
-    // 如果在休息状态，完全不执行倒计时（由 BreakWindow 自己管理）
-    if (m_state == TimerState::Break)
-    {
-        return;
-    }
-
-    // 只在工作状态下执行倒计时
-    if (m_state == TimerState::Working)
-    {
-        // 倒计时回调
-        if (m_onTick)
-        {
-            m_onTick(m_remainingSeconds, true);
-        }
-
-        // 检查是否需要显示警告（剩余30秒）
-        if (!m_warningShown && m_remainingSeconds <= 30 && m_remainingSeconds > 0)
-        {
-            m_warningShown = true;
-            if (m_onWarning)
-            {
-                m_onWarning();
-            }
-        }
-
-        // 倒计时
-        if (m_remainingSeconds > 0)
-        {
-            m_remainingSeconds--;
-        }
-        else
-        {
-            // 工作结束，增加完成的番茄钟数
-            m_completedPomodoros++;
-
-            // 开始休息
-            StartBreak();
-        }
-    }
+    m_deferred = false;
+    StartBreak();
 }
-
 void TimerManager::EndBreak()
 {
-    // 休息结束回调
-    if (m_onBreakEnd)
-    {
-        m_onBreakEnd();
-    }
-
-    // 设置为停止状态，不自动开始新工作
+    if (!IsInBreak())
+        return;
     m_state = TimerState::Stopped;
-    m_remainingSeconds = m_settings.workDuration;
-    m_totalSeconds = m_settings.workDuration;
-    m_warningShown = false;
+    m_deferred = false;
+    m_remaining = m_total = m_settings.workDuration;
+    Notify();
+    if (m_onBreakEnd)
+        m_onBreakEnd();
+}
+void TimerManager::RefreshDay()
+{
+    SYSTEMTIME t{};
+    GetLocalTime(&t);
+    wchar_t day[20];
+    swprintf_s(day, L"%04u-%02u-%02u", t.wYear, t.wMonth, t.wDay);
+    if (m_day == day)
+        return;
+    m_day = day;
+    auto path = m_statsPath.empty() ? ConfigManager::GetDataPath(L"statistics.ini") : m_statsPath;
+    m_todayCount = std::max(0, static_cast<int>(GetPrivateProfileIntW(day, L"count", 0, path.c_str())));
+    m_todaySeconds = std::max(0, static_cast<int>(GetPrivateProfileIntW(day, L"seconds", 0, path.c_str())));
+}
+void TimerManager::SaveStats()
+{
+    auto path = m_statsPath.empty() ? ConfigManager::GetDataPath(L"statistics.ini") : m_statsPath;
+    WritePrivateProfileStringW(m_day.c_str(), L"count", std::to_wstring(m_todayCount).c_str(), path.c_str());
+    WritePrivateProfileStringW(m_day.c_str(), L"seconds", std::to_wstring(m_todaySeconds).c_str(),
+                               path.c_str());
+}
+int TimerManager::TodayCount()
+{
+    RefreshDay();
+    return m_todayCount;
+}
+int TimerManager::TodayMinutes()
+{
+    RefreshDay();
+    return m_todaySeconds / 60;
+}
+
+void TimerManager::DelayBreak()
+{
+    if (!IsInBreak() || !m_active.canSkipBreak)
+        return;
+    m_state = TimerState::Working;
+    m_remaining = m_total = 300;
+    m_deferred = true;
+    m_warned = false;
+    m_lastTick = m_clock();
+    Notify();
+    if (m_onBreakDeferred)
+        m_onBreakDeferred();
 }

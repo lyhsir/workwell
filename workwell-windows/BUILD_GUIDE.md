@@ -51,7 +51,7 @@ cmake --build . --config Release
 - VS 2022: `"Visual Studio 17 2022"`
 
 ### Q: CMake 找不到
-**A**: 
+**A**:
 1. 安装 CMake: https://cmake.org/download/
 2. 或安装 Visual Studio 时勾选 "C++ CMake tools"
 

@@ -1,248 +1,172 @@
 #include "TrayIcon.h"
 #include "MainDialog.h"
+#include "Ui.h"
 #include <strsafe.h>
-#include <shellapi.h>
-#include <iostream> // 调试用，可根据项目移除
 
-#define WM_TRAYICON (WM_USER + 1)
-
-static MainDialog* g_mainDialog = nullptr;
-static UINT g_trayIconID = 1;
-
-// 调试宏（方便定位问题）
-#define LOG_DEBUG(msg) \
-    do { \
-        wchar_t buf[256]; \
-        StringCchPrintfW(buf, ARRAYSIZE(buf), L"[TrayIcon] %s (Line:%d)\n", msg, __LINE__); \
-        OutputDebugStringW(buf); \
-    } while(0)
-
-void TrayIcon::SetMainDialog(MainDialog* dialog)
+namespace
 {
-    g_mainDialog = dialog;
-    LOG_DEBUG(L"MainDialog set");
-}
-
-TrayIcon::TrayIcon(HINSTANCE hInstance, HWND hwnd, TimerManager* timerManager)
-    : m_hInstance(hInstance), m_hwnd(hwnd), m_timerManager(timerManager), m_inBreak(false)
+HICON CreateCountdownIcon(int value, bool seconds, TimerState state)
 {
-    ZeroMemory(&m_nid, sizeof(m_nid));
-
-    // 关键：先验证窗口句柄有效性
-    if (m_hwnd == NULL)
-    {
-        LOG_DEBUG(L"Error: HWND is NULL!");
-        return;
-    }
-
-    BOOL isWindow = IsWindow(m_hwnd);
-    LOG_DEBUG(isWindow ? L"HWND is valid" : L"Error: HWND is invalid!");
-
-    if (AddIcon())
-        LOG_DEBUG(L"Tray icon added successfully");
-    else
-        LOG_DEBUG(L"Error: Failed to add tray icon!");
+    int size = std::max(32, GetSystemMetrics(SM_CXSMICON) * 2);
+    Gdiplus::Bitmap bitmap(size, size, PixelFormat32bppARGB);
+    Gdiplus::Graphics g(&bitmap);
+    Ui::Quality(g);
+    g.Clear(Gdiplus::Color(0, 0, 0, 0));
+    g.ScaleTransform(size / 32.f, size / 32.f);
+    DWORD background = state == TimerState::Paused  ? 0xff98620d
+                       : state == TimerState::Break ? 0xff326ba1
+                                                    : 0xff107d76;
+    Ui::Round(g, 0, 0, 32, 32, 6, background);
+    float fontSize = value >= 100 ? 18.f : seconds ? 21.f : 25.f;
+    Gdiplus::Font font(L"Segoe UI", fontSize, Gdiplus::FontStyleBold, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush ink(Gdiplus::Color(255, 255, 255, 255));
+    Gdiplus::StringFormat format(Gdiplus::StringFormat::GenericTypographic());
+    format.SetAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetLineAlignment(Gdiplus::StringAlignmentCenter);
+    format.SetFormatFlags(Gdiplus::StringFormatFlagsNoWrap | Gdiplus::StringFormatFlagsNoClip);
+    auto label = std::to_wstring(value);
+    g.DrawString(label.c_str(), -1, &font, Gdiplus::RectF(0, 0, seconds ? 25.f : 32.f, 31),
+                 &format, &ink);
+    if (seconds)
+        Ui::Text(g, L"s", 24, 17, 8, 13, 10, 0xffffffff, true, 1, L"Segoe UI");
+    HICON icon{};
+    bitmap.GetHICON(&icon);
+    return icon;
 }
-
+} // namespace
+TrayIcon::TrayIcon(HINSTANCE, HWND hwnd, TimerManager *timer) : m_hwnd(hwnd), m_timer(timer)
+{
+    m_nid.cbSize = sizeof(m_nid);
+    m_nid.hWnd = hwnd;
+    m_nid.uID = 1;
+    m_nid.uCallbackMessage = WM_USER + 1;
+    m_nid.hIcon = Ui::Icon();
+    m_nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
+    StringCchCopyW(m_nid.szTip, 128, L"WorkWell · 准备开始");
+    Restore();
+    UpdateTimer(timer->Remaining(), false);
+}
+void TrayIcon::Restore()
+{
+    m_nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
+    Shell_NotifyIconW(NIM_ADD, &m_nid);
+    m_nid.uVersion = NOTIFYICON_VERSION;
+    Shell_NotifyIconW(NIM_SETVERSION, &m_nid);
+}
 TrayIcon::~TrayIcon()
 {
-    RemoveIcon();
-    LOG_DEBUG(L"Tray icon removed");
+    Shell_NotifyIconW(NIM_DELETE, &m_nid);
+    if (m_countdownIcon)
+        DestroyIcon(m_countdownIcon);
 }
-
-bool TrayIcon::AddIcon()
+void TrayIcon::UpdateTimer(int seconds, bool)
 {
-    // 强制使用兼容所有Windows版本的结构体大小（避免版本问题）
-    m_nid.cbSize = NOTIFYICONDATA_V2_SIZE; // 替代sizeof，兼容XP/Vista/Win7+
-    m_nid.hWnd = m_hwnd;
-    m_nid.uID = g_trayIconID;
-    m_nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
-    m_nid.uCallbackMessage = WM_TRAYICON; // 必须确保这个消息ID唯一且未被占用
-
-    // 改用应用程序图标（避免系统图标加载失败）
-    m_nid.hIcon = LoadIcon(m_hInstance, MAKEINTRESOURCE(IDI_APPLICATION));
-    if (!m_nid.hIcon) // 兜底：用系统默认图标
-    {
-        m_nid.hIcon = LoadIcon(NULL, IDI_APPLICATION);
-        LOG_DEBUG(L"Use system default icon");
-    }
-
-    StringCchCopyW(m_nid.szTip, ARRAYSIZE(m_nid.szTip), L"WorkWell");
-
-    // 第一步：添加托盘图标
-    BOOL retAdd = Shell_NotifyIconW(NIM_ADD, &m_nid);
-    if (!retAdd)
-    {
-        DWORD err = GetLastError();
-        wchar_t errBuf[256];
-        StringCchPrintfW(errBuf, ARRAYSIZE(errBuf), L"Shell_NotifyIcon NIM_ADD failed, Error: %d", err);
-        LOG_DEBUG(errBuf);
-        return false;
-    }
-
-    // 第二步：强制设置版本（关键！否则Win7+可能不响应消息）
-    m_nid.uVersion = NOTIFYICON_VERSION; // 兼容模式，比4更稳定
-    BOOL retVer = Shell_NotifyIconW(NIM_SETVERSION, &m_nid);
-    if (!retVer)
-    {
-        LOG_DEBUG(L"Warning: NIM_SETVERSION failed (compatible mode)");
-    }
-
-    return true;
-}
-
-bool TrayIcon::RemoveIcon()
-{
-    m_nid.uFlags = 0;
-    BOOL ret = Shell_NotifyIconW(NIM_DELETE, &m_nid);
-    LOG_DEBUG(ret ? L"Tray icon deleted" : L"Error: Failed to delete tray icon");
-    return ret;
-}
-
-void TrayIcon::UpdateTooltip(const wchar_t* text)
-{
-    if (!text) return;
-    StringCchCopyW(m_nid.szTip, ARRAYSIZE(m_nid.szTip), text);
+    seconds = std::max(0, seconds);
+    std::wstring tooltip = L"WorkWell · " +
+                           std::wstring(m_timer->IsInBreak()    ? L"休息中"
+                                        : m_timer->IsPaused()   ? L"已暂停"
+                                        : m_timer->IsStopped()  ? L"准备开始"
+                                        : m_timer->IsDeferred() ? L"休息已延后"
+                                                                : L"专注中") +
+                           L" · " + Ui::Time(seconds);
+    StringCchCopyW(m_nid.szTip, 128, tooltip.c_str());
     m_nid.uFlags = NIF_TIP;
-    Shell_NotifyIconW(NIM_MODIFY, &m_nid);
-}
 
-void TrayIcon::UpdateTimer(int seconds, bool isActive)
-{
-    if (!isActive || m_inBreak)
+    // The tray is too small for MM:SS. Show rounded-up minutes, then seconds
+    // with an 's' marker during the last minute; the tooltip is always exact.
+    bool showSeconds = seconds < 60;
+    int value = showSeconds ? seconds : (seconds + 59) / 60;
+    int key = m_timer->IsStopped()
+                  ? -1
+                  : value | (showSeconds ? 0x100 : 0) | (static_cast<int>(m_timer->GetState()) << 12);
+    HICON next{};
+    if (key != m_iconKey)
     {
-        m_nid.hIcon = LoadIcon(NULL, m_inBreak ? IDI_INFORMATION : IDI_APPLICATION);
-        m_nid.uFlags = NIF_ICON;
-        Shell_NotifyIconW(NIM_MODIFY, &m_nid);
-
-        if (!m_inBreak)
-            UpdateTooltip(L"WorkWell");
+        if (key != -1)
+            next = CreateCountdownIcon(value, showSeconds, m_timer->GetState());
+        if (key == -1 || next)
+        {
+            m_nid.hIcon = next ? next : Ui::Icon();
+            m_nid.uFlags |= NIF_ICON;
+        }
+    }
+    if (Shell_NotifyIconW(NIM_MODIFY, &m_nid))
+    {
+        if (m_nid.uFlags & NIF_ICON)
+        {
+            if (m_countdownIcon)
+                DestroyIcon(m_countdownIcon);
+            m_countdownIcon = next;
+            m_iconKey = key;
+        }
     }
     else
     {
-        int minutes = seconds / 60;
-        int secs = seconds % 60;
-        wchar_t buffer[256];
-        StringCchPrintfW(buffer, ARRAYSIZE(buffer), L"%02d:%02d", minutes, secs);
-        UpdateTooltip(buffer);
+        if (next)
+            DestroyIcon(next);
+        m_nid.hIcon = m_countdownIcon ? m_countdownIcon : Ui::Icon();
     }
 }
-
-void TrayIcon::SetBreakState(bool inBreak)
+void TrayIcon::SetBreakState(bool)
 {
-    m_inBreak = inBreak;
-    m_nid.hIcon = LoadIcon(NULL, inBreak ? IDI_INFORMATION : IDI_APPLICATION);
-    UpdateTooltip(inBreak ? L"Resting" : L"WorkWell");
-    m_nid.uFlags = NIF_ICON | NIF_TIP;
-    Shell_NotifyIconW(NIM_MODIFY, &m_nid);
+    UpdateTimer(m_timer->Remaining(), false);
 }
-
 void TrayIcon::ShowWarning()
 {
     m_nid.uFlags = NIF_INFO;
     m_nid.dwInfoFlags = NIIF_INFO;
-    StringCchCopyW(m_nid.szInfoTitle, ARRAYSIZE(m_nid.szInfoTitle), L"Break");
-    StringCchCopyW(m_nid.szInfo, ARRAYSIZE(m_nid.szInfo), L"Time to rest!");
-    m_nid.uTimeout = 5000;
+    StringCchCopyW(m_nid.szInfoTitle, 64, L"30 秒后休息");
+    StringCchCopyW(m_nid.szInfo, 256, L"本轮专注即将完成，请保存当前工作。起身活动一下吧。");
     Shell_NotifyIconW(NIM_MODIFY, &m_nid);
 }
-
 void TrayIcon::ShowPopupMenu()
 {
-    LOG_DEBUG(L"ShowPopupMenu called");
-    POINT pt;
-    GetCursorPos(&pt);
-
-    HMENU hMenu = CreatePopupMenu();
-    if (!hMenu)
-    {
-        LOG_DEBUG(L"Error: CreatePopupMenu failed");
-        return;
-    }
-
-    AppendMenuW(hMenu, MF_STRING, 1001, L"Pause/Resume");
-    AppendMenuW(hMenu, MF_STRING, 1002, L"Break Now");
-    AppendMenuW(hMenu, MF_SEPARATOR, 0, NULL);
-    AppendMenuW(hMenu, MF_STRING, 1003, L"Exit");
-
-    // 修复Windows 10/11菜单不显示的问题
+    HMENU menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, 1000, L"打开专注面板");
+    const wchar_t *label = m_timer->IsStopped()  ? L"开始专注"
+                           : m_timer->IsPaused() ? L"继续专注"
+                                                 : L"暂停专注";
+    AppendMenuW(menu, MF_STRING | (m_timer->IsInBreak() ? MF_GRAYED : 0), 1001, label);
+    AppendMenuW(menu, MF_STRING | (m_timer->IsInBreak() ? MF_GRAYED : 0), 1002, L"立即休息");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, 1003, L"退出 WorkWell");
+    POINT p;
+    GetCursorPos(&p);
     SetForegroundWindow(m_hwnd);
-    UINT cmd = TrackPopupMenu(
-        hMenu,
-        TPM_RETURNCMD | TPM_LEFTBUTTON | TPM_NOANIMATION,
-        pt.x,
-        pt.y,
-        0,
-        m_hwnd,
-        NULL
-    );
-
-    LOG_DEBUG(cmd > 0 ? L"Menu command selected" : L"No menu command selected");
-
-    switch (cmd)
+    UINT cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, p.x, p.y, 0, m_hwnd, nullptr);
+    DestroyMenu(menu);
+    PostMessageW(m_hwnd, WM_NULL, 0, 0);
+    if (cmd == 1000 && m_dialog)
+        m_dialog->Show();
+    else if (cmd == 1001)
     {
-    case 1001:
-        if (m_timerManager)
-            m_timerManager->IsPaused() ? m_timerManager->Resume() : m_timerManager->Pause();
-        break;
-    case 1002:
-        if (m_timerManager) m_timerManager->StartBreak();
-        break;
-    case 1003:
-        PostMessage(m_hwnd, WM_CLOSE, 0, 0);
-        break;
+        if (m_timer->IsStopped())
+            m_timer->StartWork(m_timer->GetSettings().workDuration);
+        else if (m_timer->IsPaused())
+            m_timer->Resume();
+        else
+            m_timer->Pause();
     }
-
-    PostMessage(m_hwnd, WM_NULL, 0, 0); // 必须加这行，否则菜单会卡死
-    DestroyMenu(hMenu);
+    else if (cmd == 1002)
+        m_timer->StartBreak();
+    else if (cmd == 1003)
+        PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
 }
-
-LRESULT TrayIcon::HandleTrayMessage(WPARAM wParam, LPARAM lParam)
+LRESULT TrayIcon::HandleTrayMessage(WPARAM wp, LPARAM lp)
 {
-    // 打印接收到的消息（调试关键）
-    wchar_t msgBuf[256];
-    StringCchPrintfW(msgBuf, ARRAYSIZE(msgBuf),
-        L"HandleTrayMessage: wParam=%u, lParam=0x%X (msg=%u)",
-        wParam, lParam, LOWORD(lParam));
-    LOG_DEBUG(msgBuf);
-
-    // 仅处理当前托盘图标的消息
-    if (wParam != g_trayIconID)
-    {
-        LOG_DEBUG(L"Skip: wParam is not tray icon ID");
+    if (wp != 1)
         return 0;
-    }
-
-    UINT msg = LOWORD(lParam);
-    switch (msg)
+    switch (LOWORD(lp))
     {
-    case WM_LBUTTONDOWN:
-        LOG_DEBUG(L"WM_LBUTTONDOWN detected");
-        if (g_mainDialog)
-            g_mainDialog->IsVisible() ? g_mainDialog->Hide() : g_mainDialog->Show();
+    case WM_LBUTTONUP:
+    case NIN_KEYSELECT:
+        if (m_dialog)
+            m_dialog->Show();
         break;
-
-    case WM_LBUTTONDBLCLK:
-        LOG_DEBUG(L"WM_LBUTTONDBLCLK detected");
-        if (m_timerManager)
-            m_timerManager->IsPaused() ? m_timerManager->Resume() : m_timerManager->Pause();
-        break;
-
     case WM_RBUTTONUP:
-        LOG_DEBUG(L"WM_RBUTTONUP detected");
-        ShowPopupMenu();
-        break;
-
     case WM_CONTEXTMENU:
-        LOG_DEBUG(L"WM_CONTEXTMENU detected");
         ShowPopupMenu();
-        break;
-
-    default:
-        StringCchPrintfW(msgBuf, ARRAYSIZE(msgBuf), L"Unhandled tray msg: %u", msg);
-        LOG_DEBUG(msgBuf);
         break;
     }
-
-    return 1; // 返回非0表示消息已处理
+    return 0;
 }

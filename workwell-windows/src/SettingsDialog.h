@@ -1,54 +1,34 @@
 #pragma once
-
 #include <windows.h>
 #include <functional>
-
 class SettingsDialog
 {
-public:
+  public:
     struct Settings
     {
-        int workDuration;        // 工作时长（分钟）
-        int shortBreakDuration;  // 短休息时长（分钟）
-        int longBreakDuration;   // 长休息时长（分钟）
-        int pomodorosUntilLongBreak;  // 多少个番茄钟后长休息
-        bool canSkipBreak;       // 是否可以跳过休息
-
-        Settings()
-            : workDuration(25)
-            , shortBreakDuration(5)
-            , longBreakDuration(15)
-            , pomodorosUntilLongBreak(4)
-            , canSkipBreak(false)
-        {}
+        int workDuration = 25, shortBreakDuration = 5, longBreakDuration = 15, pomodorosUntilLongBreak = 4;
+        bool canSkipBreak = true;
     };
-
-    using OnSettingsChangedCallback = std::function<void(const Settings& settings)>;
-
-    SettingsDialog(HINSTANCE hInstance, HWND parentHWND, const Settings& initialSettings);
+    using OnSettingsChangedCallback = std::function<bool(const Settings &)>;
+    SettingsDialog(HINSTANCE, HWND, const Settings &);
     ~SettingsDialog();
-
     void Show();
     void Hide();
-    void SetOnSettingsChanged(OnSettingsChangedCallback callback) { m_onSettingsChanged = callback; }
+    bool IsVisible() const { return IsWindowVisible(m_hwnd) != FALSE; }
+    HWND Handle() const { return m_hwnd; }
+    void SetOnSettingsChanged(OnSettingsChangedCallback cb) { m_changed = cb; }
 
-private:
-    HINSTANCE m_hInstance;
-    HWND m_parentHWND;
-    HWND m_hwnd;
-    Settings m_settings;
-    OnSettingsChangedCallback m_onSettingsChanged;
-
-    HWND m_workDurationEdit;
-    HWND m_shortBreakEdit;
-    HWND m_longBreakEdit;
-    HWND m_pomodorosEdit;
-    HWND m_canSkipBreakCheck;
-
-    bool RegisterWindowClass();
-    bool CreateDialogWindow();
-    void InitControls();
-    void ApplySettings();
-
-    static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+  private:
+    HINSTANCE m_instance;
+    HWND m_parent, m_hwnd{}, m_edits[4]{}, m_spins[4]{}, m_modes[2]{};
+    HFONT m_font{};
+    Settings m_saved;
+    bool m_canSkip;
+    int m_error = -1;
+    OnSettingsChangedCallback m_changed;
+    void Layout();
+    void Paint();
+    bool Apply();
+    void Restore();
+    static LRESULT CALLBACK Proc(HWND, UINT, WPARAM, LPARAM);
 };

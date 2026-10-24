@@ -1,336 +1,222 @@
-#define _WIN32_WINNT 0x0601
-#define _WIN32_IE 0x0601
-
 #include "SettingsDialog.h"
-#include <strsafe.h>
-
-static SettingsDialog* g_settingsDialogPtr = nullptr;
-
-SettingsDialog::SettingsDialog(HINSTANCE hInstance, HWND parentHWND, const Settings& initialSettings)
-    : m_hInstance(hInstance), m_parentHWND(parentHWND), m_hwnd(NULL),
-      m_settings(initialSettings), m_workDurationEdit(NULL), m_shortBreakEdit(NULL),
-      m_longBreakEdit(NULL), m_pomodorosEdit(NULL), m_canSkipBreakCheck(NULL)
+#include "Ui.h"
+SettingsDialog::SettingsDialog(HINSTANCE instance, HWND parent, const Settings &s)
+    : m_instance(instance), m_parent(parent), m_saved(s), m_canSkip(s.canSkipBreak)
 {
-    RegisterWindowClass();
-    CreateDialogWindow();
+    WNDCLASSW wc{};
+    wc.hInstance = instance;
+    wc.lpfnWndProc = Proc;
+    wc.lpszClassName = L"WorkWellSettingsV2";
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    RegisterClassW(&wc);
+    m_hwnd = CreateWindowExW(0, wc.lpszClassName, L"WorkWell · 设置",
+                             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN, 0, 0, 450, 760,
+                             nullptr, nullptr, instance, this);
+    Ui::Setup(m_hwnd, 446, 730, parent);
+    const int mins[] = {1, 1, 1, 2}, maxs[] = {120, 30, 60, 10};
+    const wchar_t *labels[] = {L"专注时长", L"短休息", L"长休息", L"长休息间隔"};
+    for (int i = 0; i < 4; ++i)
+    {
+        Ui::Label(m_hwnd, 2100 + i, labels[i], 48, 119 + i * 55, 185, 38);
+        m_edits[i] = CreateWindowExW(
+            0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER | ES_CENTER | ES_AUTOHSCROLL, 0,
+            0, 0, 0, m_hwnd, reinterpret_cast<HMENU>(static_cast<INT_PTR>(1100 + i)), instance, nullptr);
+        SendMessageW(m_edits[i], EM_SETLIMITTEXT, 3, 0);
+        m_spins[i] = CreateWindowExW(0, UPDOWN_CLASSW, L"",
+                                     WS_CHILD | WS_VISIBLE | UDS_ALIGNRIGHT | UDS_ARROWKEYS | UDS_SETBUDDYINT,
+                                     0, 0, 0, 0, m_hwnd, nullptr, instance, nullptr);
+        SendMessageW(m_spins[i], UDM_SETBUDDY, reinterpret_cast<WPARAM>(m_edits[i]), 0);
+        SendMessageW(m_spins[i], UDM_SETRANGE32, mins[i], maxs[i]);
+    }
+    m_modes[0] = Ui::Button(m_hwnd, 1200, L"温和模式\n允许延后或跳过", 28, 415, 189, 82, 3);
+    m_modes[1] = Ui::Button(m_hwnd, 1201, L"严格模式\n按计划全屏休息", 229, 415, 189, 82, 4);
+    Ui::Button(m_hwnd, 1300, L"取消", 214, 663, 88, 44, 2);
+    Ui::Button(m_hwnd, 1301, L"保存设置", 314, 663, 104, 44);
+    Layout();
+    Restore();
 }
-
 SettingsDialog::~SettingsDialog()
 {
-    if (m_hwnd)
-    {
+    if (IsWindow(m_hwnd))
         DestroyWindow(m_hwnd);
-    }
+    if (m_font)
+        DeleteObject(m_font);
 }
-
-bool SettingsDialog::RegisterWindowClass()
+void SettingsDialog::Layout()
 {
-    WNDCLASSEXW wc = {};
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = m_hInstance;
-    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wc.hbrBackground = CreateSolidBrush(RGB(250, 250, 255));
-    wc.lpszClassName = L"WorkWellSettingsDialog";
-
-    return RegisterClassExW(&wc) != 0;
-}
-
-bool SettingsDialog::CreateDialogWindow()
-{
-    g_settingsDialogPtr = this;
-
-    m_hwnd = ::CreateWindowExW(
-        WS_EX_OVERLAPPEDWINDOW,
-        L"WorkWellSettingsDialog",
-        L"WorkWell Settings",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU,
-        CW_USEDEFAULT, CW_USEDEFAULT,
-        420, 450,
-        NULL, NULL, m_hInstance, this
-    );
-
-    if (!m_hwnd)
+    if (m_font)
+        DeleteObject(m_font);
+    m_font = CreateFontW(-Ui::Px(m_hwnd, 16), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, 0, 0,
+                         CLEARTYPE_QUALITY, 0, L"Microsoft YaHei UI");
+    for (int i = 0; i < 4; ++i)
     {
-        return false;
+        Ui::Move(GetDlgItem(m_hwnd, 2100 + i), m_hwnd, 48, 119 + i * 55, 185, 38);
+        Ui::Move(m_edits[i], m_hwnd, 258, 125 + i * 55, 66, 28);
+        Ui::Move(m_spins[i], m_hwnd, 324, 122 + i * 55, 22, 34);
+        SendMessageW(m_edits[i], WM_SETFONT, reinterpret_cast<WPARAM>(m_font), TRUE);
     }
-
-    // 禁止调整窗口大小
-    LONG_PTR style = GetWindowLongPtr(m_hwnd, GWL_STYLE);
-    style &= ~WS_SIZEBOX;
-    SetWindowLongPtr(m_hwnd, GWL_STYLE, style);
-
-    // 计算居中位置
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    int windowWidth = 420;
-    int windowHeight = 450;
-    int x = (screenWidth - windowWidth) / 2;
-    int y = (screenHeight - windowHeight) / 2;
-    SetWindowPos(m_hwnd, NULL, x, y, windowWidth, windowHeight, SWP_HIDEWINDOW);
-
-    InitControls();
-
-    return true;
+    Ui::Move(m_modes[0], m_hwnd, 28, 415, 189, 82);
+    Ui::Move(m_modes[1], m_hwnd, 229, 415, 189, 82);
+    Ui::Move(GetDlgItem(m_hwnd, 1300), m_hwnd, 214, 663, 88, 44);
+    Ui::Move(GetDlgItem(m_hwnd, 1301), m_hwnd, 314, 663, 104, 44);
 }
-
-void SettingsDialog::InitControls()
+void SettingsDialog::Restore()
 {
-    // 标题字体
-    HFONT hTitleFont = CreateFontW(
-        18, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
-    );
-
-    HFONT hLabelFont = CreateFontW(
-        14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
-    );
-
-    HFONT hButtonFont = CreateFontW(
-        14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
-    );
-
-    int labelX = 30;
-    int editX = 180;
-    int controlWidth = 200;
-    int editHeight = 26;
-    int startY = 20;
-    int spacing = 55;
-
-    // 工作时长
-    HWND workLabel = ::CreateWindowExW(
-        0, L"STATIC", L"工作时长（分钟）:",
-        WS_CHILD | WS_VISIBLE,
-        labelX, startY, controlWidth, 20,
-        m_hwnd, NULL, m_hInstance, NULL
-    );
-    SendMessage(workLabel, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    m_workDurationEdit = ::CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL,
-        editX, startY - 2, 80, editHeight,
-        m_hwnd, (HMENU)1001, m_hInstance, NULL
-    );
-    SendMessage(m_workDurationEdit, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    wchar_t workText[16];
-    StringCchPrintfW(workText, ARRAYSIZE(workText), L"%d", m_settings.workDuration);
-    SetWindowTextW(m_workDurationEdit, workText);
-
-    // 短休息时长
-    HWND shortBreakLabel = ::CreateWindowExW(
-        0, L"STATIC", L"短休息时长（分钟）:",
-        WS_CHILD | WS_VISIBLE,
-        labelX, startY + spacing, controlWidth, 20,
-        m_hwnd, NULL, m_hInstance, NULL
-    );
-    SendMessage(shortBreakLabel, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    m_shortBreakEdit = ::CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL,
-        editX, startY + spacing - 2, 80, editHeight,
-        m_hwnd, (HMENU)1002, m_hInstance, NULL
-    );
-    SendMessage(m_shortBreakEdit, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    wchar_t shortBreakText[16];
-    StringCchPrintfW(shortBreakText, ARRAYSIZE(shortBreakText), L"%d", m_settings.shortBreakDuration);
-    SetWindowTextW(m_shortBreakEdit, shortBreakText);
-
-    // 长休息时长
-    HWND longBreakLabel = ::CreateWindowExW(
-        0, L"STATIC", L"长休息时长（分钟）:",
-        WS_CHILD | WS_VISIBLE,
-        labelX, startY + spacing * 2, controlWidth, 20,
-        m_hwnd, NULL, m_hInstance, NULL
-    );
-    SendMessage(longBreakLabel, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    m_longBreakEdit = ::CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL,
-        editX, startY + spacing * 2 - 2, 80, editHeight,
-        m_hwnd, (HMENU)1003, m_hInstance, NULL
-    );
-    SendMessage(m_longBreakEdit, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    wchar_t longBreakText[16];
-    StringCchPrintfW(longBreakText, ARRAYSIZE(longBreakText), L"%d", m_settings.longBreakDuration);
-    SetWindowTextW(m_longBreakEdit, longBreakText);
-
-    // 长休息间隔
-    HWND pomodorosLabel = ::CreateWindowExW(
-        0, L"STATIC", L"长休息间隔（番茄数）:",
-        WS_CHILD | WS_VISIBLE,
-        labelX, startY + spacing * 3, controlWidth, 20,
-        m_hwnd, NULL, m_hInstance, NULL
-    );
-    SendMessage(pomodorosLabel, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    m_pomodorosEdit = ::CreateWindowExW(
-        WS_EX_CLIENTEDGE, L"EDIT", L"",
-        WS_CHILD | WS_VISIBLE | ES_NUMBER | ES_AUTOHSCROLL,
-        editX, startY + spacing * 3 - 2, 80, editHeight,
-        m_hwnd, (HMENU)1004, m_hInstance, NULL
-    );
-    SendMessage(m_pomodorosEdit, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-
-    wchar_t pomodorosText[16];
-    StringCchPrintfW(pomodorosText, ARRAYSIZE(pomodorosText), L"%d", m_settings.pomodorosUntilLongBreak);
-    SetWindowTextW(m_pomodorosEdit, pomodorosText);
-
-    // 是否可以跳过休息
-    m_canSkipBreakCheck = ::CreateWindowExW(
-        0, L"BUTTON", L"允许跳过休息",
-        WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-        labelX, startY + spacing * 4, 200, 24,
-        m_hwnd, (HMENU)1005, m_hInstance, NULL
-    );
-    SendMessage(m_canSkipBreakCheck, WM_SETFONT, (WPARAM)hLabelFont, TRUE);
-    SendMessage(m_canSkipBreakCheck, BM_SETCHECK, m_settings.canSkipBreak ? BST_CHECKED : BST_UNCHECKED, 0);
-
-    // 按钮
-    int buttonY = startY + spacing * 5 + 10;
-    int buttonWidth = 100;
-    int buttonHeight = 36;
-    int buttonSpacing = 15;
-    int totalButtonWidth = buttonWidth * 2 + buttonSpacing;
-    int buttonStartX = (420 - totalButtonWidth) / 2;
-
-    HWND saveButton = ::CreateWindowExW(
-        0, L"BUTTON", L"保存",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        buttonStartX, buttonY, buttonWidth, buttonHeight,
-        m_hwnd, (HMENU)2001, m_hInstance, NULL
-    );
-    SendMessage(saveButton, WM_SETFONT, (WPARAM)hButtonFont, TRUE);
-
-    HWND cancelButton = ::CreateWindowExW(
-        0, L"BUTTON", L"取消",
-        WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
-        buttonStartX + buttonWidth + buttonSpacing, buttonY, buttonWidth, buttonHeight,
-        m_hwnd, (HMENU)2002, m_hInstance, NULL
-    );
-    SendMessage(cancelButton, WM_SETFONT, (WPARAM)hButtonFont, TRUE);
+    int values[] = {m_saved.workDuration, m_saved.shortBreakDuration, m_saved.longBreakDuration,
+                    m_saved.pomodorosUntilLongBreak};
+    for (int i = 0; i < 4; ++i)
+        SetWindowTextW(m_edits[i], std::to_wstring(values[i]).c_str());
+    m_canSkip = m_saved.canSkipBreak;
+    m_error = -1;
+    for (int i = 0; i < 2; ++i)
+    {
+        SetWindowLongPtrW(m_modes[i], GWLP_USERDATA, (i == 0) == m_canSkip ? 3 : 4);
+        InvalidateRect(m_modes[i], nullptr, FALSE);
+    }
+    InvalidateRect(m_hwnd, nullptr, FALSE);
 }
-
 void SettingsDialog::Show()
 {
-    int screenWidth = GetSystemMetrics(SM_CXSCREEN);
-    int screenHeight = GetSystemMetrics(SM_CYSCREEN);
-    int windowWidth = 420;
-    int windowHeight = 450;
-    int x = (screenWidth - windowWidth) / 2;
-    int y = (screenHeight - windowHeight) / 2;
-    SetWindowPos(m_hwnd, HWND_TOPMOST, x, y, windowWidth, windowHeight, SWP_SHOWWINDOW);
-
+    Restore();
     ShowWindow(m_hwnd, SW_SHOW);
     SetForegroundWindow(m_hwnd);
+    SetFocus(m_edits[0]);
 }
 void SettingsDialog::Hide()
 {
     ShowWindow(m_hwnd, SW_HIDE);
 }
-
-void SettingsDialog::ApplySettings()
+bool SettingsDialog::Apply()
 {
-    wchar_t buffer[32];
-
-    // 读取工作时长
-    GetWindowTextW(m_workDurationEdit, buffer, ARRAYSIZE(buffer));
-    int workDuration = _wtoi(buffer);
-    if (workDuration < 1) workDuration = 1;
-    if (workDuration > 120) workDuration = 120;
-    m_settings.workDuration = workDuration;
-
-    // 读取短休息时长
-    GetWindowTextW(m_shortBreakEdit, buffer, ARRAYSIZE(buffer));
-    int shortBreak = _wtoi(buffer);
-    if (shortBreak < 1) shortBreak = 1;
-    if (shortBreak > 30) shortBreak = 30;
-    m_settings.shortBreakDuration = shortBreak;
-
-    // 读取长休息时长
-    GetWindowTextW(m_longBreakEdit, buffer, ARRAYSIZE(buffer));
-    int longBreak = _wtoi(buffer);
-    if (longBreak < 1) longBreak = 1;
-    if (longBreak > 60) longBreak = 60;
-    m_settings.longBreakDuration = longBreak;
-
-    // 读取长休息间隔
-    GetWindowTextW(m_pomodorosEdit, buffer, ARRAYSIZE(buffer));
-    int pomodoros = _wtoi(buffer);
-    if (pomodoros < 2) pomodoros = 2;
-    if (pomodoros > 10) pomodoros = 10;
-    m_settings.pomodorosUntilLongBreak = pomodoros;
-
-    // 读取是否可以跳过休息
-    m_settings.canSkipBreak = (SendMessage(m_canSkipBreakCheck, BM_GETCHECK, 0, 0) == BST_CHECKED);
-
-    // 通知设置已更改
-    if (m_onSettingsChanged)
+    int v[4];
+    const int lo[] = {1, 1, 1, 2}, hi[] = {120, 30, 60, 10};
+    for (int i = 0; i < 4; ++i)
     {
-        m_onSettingsChanged(m_settings);
+        BOOL ok;
+        v[i] = GetDlgItemInt(m_hwnd, 1100 + i, &ok, FALSE);
+        if (!ok || v[i] < lo[i] || v[i] > hi[i])
+        {
+            m_error = i;
+            SetFocus(m_edits[i]);
+            SendMessageW(m_edits[i], EM_SETSEL, 0, -1);
+            InvalidateRect(m_hwnd, nullptr, FALSE);
+            return false;
+        }
+    }
+    Settings s;
+    s.workDuration = v[0];
+    s.shortBreakDuration = v[1];
+    s.longBreakDuration = v[2];
+    s.pomodorosUntilLongBreak = v[3];
+    s.canSkipBreak = m_canSkip;
+    if (m_changed && !m_changed(s))
+        return false;
+    m_saved = s;
+    Hide();
+    return true;
+}
+void SettingsDialog::Paint()
+{
+    Ui::Paint p(m_hwnd);
+    auto &g = *p.g;
+    Ui::Text(g, L"设置", 24, 15, 390, 53, 28, Ui::Ink, true);
+    Ui::Round(g, 16, 79, 414, 279, 9, Ui::Bg, Ui::Line);
+    Ui::Text(g, L"专注节奏", 32, 87, 370, 35, 17, Ui::Ink, true);
+    for (int i = 0; i < 4; ++i)
+    {
+        float y = 119.f + i * 55;
+        Ui::Round(g, 250, y, 98, 38, 5, 0xffffffff, m_error == i ? 0xffbf493f : Ui::Line);
+        Ui::Text(g, i == 3 ? L"轮" : L"分钟", 363, y, 50, 38, 14, Ui::Muted);
+        if (i < 3)
+            Ui::LineAt(g, 32, y + 47, 414, y + 47);
+    }
+    Ui::Text(g, L"休息方式", 28, 372, 390, 35, 17, Ui::Ink, true);
+    Ui::Round(g, 28, 517, 390, 120, 8, Ui::Bg, Ui::Line);
+    Ui::Text(g, L"你的专注节奏", 44, 528, 350, 31, 15, Ui::Ink, true);
+    int v[4];
+    for (int i = 0; i < 4; ++i)
+        v[i] = GetDlgItemInt(m_hwnd, 1100 + i, nullptr, FALSE);
+    Ui::Text(g, L"专注 " + std::to_wstring(v[0]) + L" 分钟  →  休息 " + std::to_wstring(v[1]) + L" 分钟", 44,
+             564, 350, 28, 14, Ui::Muted);
+    Ui::Text(g, L"每完成 " + std::to_wstring(v[3]) + L" 轮，长休息 " + std::to_wstring(v[2]) + L" 分钟", 44,
+             593, 350, 28, 14, Ui::Muted);
+    Ui::Text(g, m_error >= 0 ? L"请输入范围内的整数" : L"ⓘ 新设置从下一轮生效", 20, 664, 190, 44, 12,
+             m_error >= 0 ? 0xffbf493f : Ui::Muted);
+    if (m_error >= 0)
+    {
+        const wchar_t *ranges[] = {L"专注时长：1–120 分钟", L"短休息：1–30 分钟", L"长休息：1–60 分钟",
+                                   L"长休息间隔：2–10 轮"};
+        Ui::Text(g, ranges[m_error], 28, 638, 390, 24, 12, 0xffbf493f);
     }
 }
-
-LRESULT CALLBACK SettingsDialog::WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK SettingsDialog::Proc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
-    if (uMsg == WM_CREATE)
+    auto *self = reinterpret_cast<SettingsDialog *>(GetWindowLongPtrW(w, GWLP_USERDATA));
+    if (msg == WM_NCCREATE)
     {
-        CREATESTRUCT* pCreate = reinterpret_cast<CREATESTRUCT*>(lParam);
-        g_settingsDialogPtr = reinterpret_cast<SettingsDialog*>(pCreate->lpCreateParams);
+        self = static_cast<SettingsDialog *>(reinterpret_cast<CREATESTRUCTW *>(lp)->lpCreateParams);
+        SetWindowLongPtrW(w, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+    }
+    if (!self)
+        return DefWindowProcW(w, msg, wp, lp);
+    switch (msg)
+    {
+    case WM_PAINT:
+        self->Paint();
         return 0;
-    }
-
-    if (!g_settingsDialogPtr)
+    case WM_ERASEBKGND:
+        return 1;
+    case WM_DRAWITEM:
+        Ui::DrawButton(reinterpret_cast<DRAWITEMSTRUCT *>(lp));
+        return TRUE;
+    case WM_CTLCOLOREDIT:
     {
-        return DefWindowProc(hwnd, uMsg, wParam, lParam);
+        SetTextColor(reinterpret_cast<HDC>(wp), RGB(20, 33, 45));
+        SetBkColor(reinterpret_cast<HDC>(wp), RGB(255, 255, 255));
+        return reinterpret_cast<LRESULT>(GetStockObject(WHITE_BRUSH));
     }
-
-    switch (uMsg)
-    {
-    case WM_CTLCOLORSTATIC:
-    {
-        HDC hdcStatic = (HDC)wParam;
-        SetBkMode(hdcStatic, TRANSPARENT);
-        SetTextColor(hdcStatic, RGB(33, 33, 33));
-        return (LRESULT)GetStockObject(NULL_BRUSH);
-    }
-
     case WM_COMMAND:
     {
-        WORD cmd = LOWORD(wParam);
-
-        switch (cmd)
+        int id = LOWORD(wp);
+        if (id == 1301)
         {
-        case 2001:  // 保存按钮
-            g_settingsDialogPtr->ApplySettings();
-            g_settingsDialogPtr->Hide();
-            return 0;
-
-        case 2002:  // 取消按钮
-            g_settingsDialogPtr->Hide();
+            self->Apply();
             return 0;
         }
-        break;
+        if (id == 1300 || id == IDCANCEL)
+        {
+            self->Hide();
+            return 0;
+        }
+        if (id == IDOK)
+        {
+            self->Apply();
+            return 0;
+        }
+        if (id == 1200 || id == 1201)
+        {
+            self->m_canSkip = id == 1200;
+            for (int i = 0; i < 2; ++i)
+            {
+                SetWindowLongPtrW(self->m_modes[i], GWLP_USERDATA, (i == 0) == self->m_canSkip ? 3 : 4);
+                InvalidateRect(self->m_modes[i], nullptr, FALSE);
+            }
+        }
+        if (HIWORD(wp) == EN_CHANGE)
+            InvalidateRect(w, nullptr, FALSE);
+        return 0;
     }
-
+    case WM_DPICHANGED:
+    {
+        auto *r = reinterpret_cast<RECT *>(lp);
+        SetWindowPos(w, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        self->Layout();
+        return 0;
+    }
     case WM_CLOSE:
-        ShowWindow(hwnd, SW_HIDE);
-        return 0;
-
-    case WM_DESTROY:
+        self->Hide();
         return 0;
     }
-
-    return DefWindowProc(hwnd, uMsg, wParam, lParam);
+    return DefWindowProcW(w, msg, wp, lp);
 }

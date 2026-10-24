@@ -1,33 +1,26 @@
 #pragma once
-
 #include <windows.h>
-#include <string>
-#include <functional>
+#include <shellapi.h>
 #include "TimerManager.h"
-
 class MainDialog;
-
 class TrayIcon
 {
-public:
-    TrayIcon(HINSTANCE hInstance, HWND hwnd, TimerManager* timerManager);
+  public:
+    TrayIcon(HINSTANCE, HWND, TimerManager *);
     ~TrayIcon();
-
-    void SetMainDialog(MainDialog* dialog);
-    void UpdateTimer(int seconds, bool isActive);
-    void SetBreakState(bool inBreak);
+    void SetMainDialog(MainDialog *dialog) { m_dialog = dialog; }
+    void UpdateTimer(int, bool);
+    void SetBreakState(bool);
     void ShowWarning();
-    LRESULT HandleTrayMessage(WPARAM wParam, LPARAM lParam);
+    LRESULT HandleTrayMessage(WPARAM, LPARAM);
+    void Restore();
 
-private:
-    HINSTANCE m_hInstance;
+  private:
     HWND m_hwnd;
-    TimerManager* m_timerManager;
-    NOTIFYICONDATAW m_nid;
-    bool m_inBreak;
-
-    bool AddIcon();
-    bool RemoveIcon();
-    void UpdateTooltip(const wchar_t* text);
+    TimerManager *m_timer;
+    MainDialog *m_dialog{};
+    NOTIFYICONDATAW m_nid{};
+    HICON m_countdownIcon{};
+    int m_iconKey = -2;
     void ShowPopupMenu();
 };

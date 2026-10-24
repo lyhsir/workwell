@@ -1,8 +1,8 @@
 #pragma once
-
-#include <functional>
 #include <windows.h>
-
+#include <functional>
+#include <algorithm>
+#include <string>
 enum class TimerState
 {
     Working,
@@ -10,63 +10,58 @@ enum class TimerState
     Paused,
     Stopped
 };
-
 class TimerManager
 {
-public:
+  public:
     struct Settings
     {
-        int workDuration;        // 工作时长（秒）
-        int shortBreakDuration;  // 短休息时长（秒）
-        int longBreakDuration;   // 长休息时长（秒）
-        int pomodorosUntilLongBreak;  // 多少个番茄钟后长休息
-        bool canSkipBreak;       // 是否可以跳过休息
-
-        Settings()
-            : workDuration(25 * 60)
-            , shortBreakDuration(5 * 60)
-            , longBreakDuration(15 * 60)
-            , pomodorosUntilLongBreak(4)
-            , canSkipBreak(false)
-        {}
+        int workDuration = 1500, shortBreakDuration = 300, longBreakDuration = 900,
+            pomodorosUntilLongBreak = 4;
+        bool canSkipBreak = true;
     };
-
-    using OnTickCallback = std::function<void(int seconds, bool isActive)>;
+    using OnTickCallback = std::function<void(int, bool)>;
     using OnEventCallback = std::function<void()>;
-
-    TimerManager();
-    ~TimerManager();
-
+    explicit TimerManager(std::function<ULONGLONG()> clock = {}, std::wstring statsPath = L"");
     void StartWork(int seconds);
     void StartBreak();
     void Pause();
     void Resume();
     void Stop();
     void OnTick();
-    void EndBreak();  // 结束休息，不自动开始新工作
+    void EndBreak();
+    void DelayBreak();
+    bool IsDeferred() const { return m_deferred; }
     bool IsPaused() const { return m_state == TimerState::Paused; }
     bool IsStopped() const { return m_state == TimerState::Stopped; }
     bool IsInBreak() const { return m_state == TimerState::Break; }
+    TimerState GetState() const { return m_state; }
+    int Remaining() const { return m_remaining; }
+    int Total() const { return m_total; }
+    void SetSettings(const Settings &settings);
+    const Settings &GetSettings() const { return m_settings; }
+    const Settings &ActiveSettings() const { return IsStopped() ? m_settings : m_active; }
+    int GetCompletedPomodoros() const { return m_completed; }
+    int TodayCount();
+    int TodayMinutes();
+    int NextBreakSeconds() const;
+    void SetOnTick(OnTickCallback cb) { m_onTick = cb; }
+    void SetOnBreakStart(OnEventCallback cb) { m_onBreakStart = cb; }
+    void SetOnBreakEnd(OnEventCallback cb) { m_onBreakEnd = cb; }
+    void SetOnWarning(OnEventCallback cb) { m_onWarning = cb; }
+    void SetOnBreakDeferred(OnEventCallback cb) { m_onBreakDeferred = cb; }
 
-    void SetSettings(const Settings& settings) { m_settings = settings; }
-    const Settings& GetSettings() const { return m_settings; }
-    int GetCompletedPomodoros() const { return m_completedPomodoros; }
-
-    void SetOnTick(OnTickCallback callback) { m_onTick = callback; }
-    void SetOnBreakStart(OnEventCallback callback) { m_onBreakStart = callback; }
-    void SetOnBreakEnd(OnEventCallback callback) { m_onBreakEnd = callback; }
-    void SetOnWarning(OnEventCallback callback) { m_onWarning = callback; }
-
-private:
-    TimerState m_state;
-    int m_remainingSeconds;
-    int m_totalSeconds;
-    bool m_warningShown;
-    Settings m_settings;
-    int m_completedPomodoros;  // 已完成的番茄钟数
-
+  private:
+    TimerState m_state = TimerState::Stopped;
+    Settings m_settings, m_active;
+    int m_remaining = 1500, m_total = 1500, m_completed = 0, m_todayCount = 0, m_todaySeconds = 0;
+    std::wstring m_day, m_statsPath;
+    std::function<ULONGLONG()> m_clock;
+    bool m_deferred = false;
+    ULONGLONG m_lastTick = 0;
+    bool m_warned = false;
     OnTickCallback m_onTick;
-    OnEventCallback m_onBreakStart;
-    OnEventCallback m_onBreakEnd;
-    OnEventCallback m_onWarning;
+    OnEventCallback m_onBreakStart, m_onBreakEnd, m_onWarning, m_onBreakDeferred;
+    void Notify();
+    void RefreshDay();
+    void SaveStats();
 };

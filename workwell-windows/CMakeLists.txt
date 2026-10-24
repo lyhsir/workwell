@@ -25,6 +25,7 @@ target_compile_definitions(WorkWell PRIVATE
     _WIN32_IE=0x0601
     UNICODE
     _UNICODE
+    NOMINMAX
 )
 
 # 链接库
@@ -34,6 +35,8 @@ target_link_libraries(WorkWell PRIVATE
     shell32
     comctl32
     msimg32
+    gdiplus
+    dwmapi
 )
 
 # MSVC 编译选项
@@ -41,7 +44,7 @@ if(MSVC)
     target_compile_options(WorkWell PRIVATE
         /W4
         /utf-8
-        /O2
+        /O1
     )
     # 静态链接运行时
     set_property(TARGET WorkWell PROPERTY
@@ -55,3 +58,16 @@ endif()
 
 # 安装
 install(TARGETS WorkWell DESTINATION .)
+
+include(CTest)
+if(BUILD_TESTING)
+    add_executable(WorkWellTests tests/TimerTests.cpp src/TimerManager.cpp src/ConfigManager.cpp)
+    target_include_directories(WorkWellTests PRIVATE src)
+    target_compile_definitions(WorkWellTests PRIVATE UNICODE _UNICODE NOMINMAX)
+    target_link_libraries(WorkWellTests PRIVATE user32 shell32)
+    if(MSVC)
+        target_compile_options(WorkWellTests PRIVATE /W4 /utf-8)
+        set_property(TARGET WorkWellTests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+    endif()
+    add_test(NAME TimerAndConfiguration COMMAND WorkWellTests)
+endif()

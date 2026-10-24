@@ -38,3 +38,14 @@ Makefile
 
 # macOS
 .DS_Store
+
+# Imported archive metadata and local source backups
+__MACOSX/
+*.zip
+
+# Runtime settings / personal statistics
+WorkWell.config
+statistics.ini
+
+# Keep the checked-in cross-compilation toolchain
+!cmake/mingw-w64.cmake

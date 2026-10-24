@@ -1,145 +1,140 @@
-#define _WIN32_WINNT 0x0601
-#define _WIN32_IE 0x0601
-
 #include <windows.h>
-#include <string>
 #include <memory>
-
+#ifdef _MSC_VER
+#pragma comment(                                                                                             \
+    linker,                                                                                                  \
+    "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
+#endif
+#include "Ui.h"
 #include "TrayIcon.h"
 #include "TimerManager.h"
 #include "BreakWindow.h"
 #include "MainDialog.h"
 #include "ConfigManager.h"
-
-HINSTANCE g_hInstance = NULL;
-std::unique_ptr<TimerManager> g_timerManager;
-std::unique_ptr<BreakWindow> g_breakWindow;
-std::unique_ptr<MainDialog> g_mainDialog;
-std::unique_ptr<TrayIcon> g_trayIcon;
-
-const wchar_t CLASS_NAME[] = L"WorkWellClass";
-
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+std::unique_ptr<TimerManager> g_timer;
+std::unique_ptr<BreakWindow> g_break;
+std::unique_ptr<MainDialog> g_main;
+std::unique_ptr<TrayIcon> g_tray;
+UINT g_taskbarCreated = 0;
+LRESULT CALLBACK HostProc(HWND w, UINT msg, WPARAM wp, LPARAM lp)
 {
-    switch (uMsg)
+    if (msg == g_taskbarCreated && g_tray)
     {
+        g_tray->Restore();
+        return 0;
+    }
+    switch (msg)
+    {
+    case WM_TIMER:
+        if (g_timer)
+            g_timer->OnTick();
+        return 0;
+    case WM_USER + 1:
+        if (g_tray)
+            return g_tray->HandleTrayMessage(wp, lp);
+        return 0;
+    case WM_CLOSE:
+        DestroyWindow(w);
+        return 0;
     case WM_DESTROY:
         PostQuitMessage(0);
         return 0;
-
-    case WM_TIMER:
-        if (g_timerManager) {
-            g_timerManager->OnTick();
-        }
-        return 0;
-
-    default:
-        if (uMsg == WM_USER + 1 && g_trayIcon)
+    }
+    return DefWindowProcW(w, msg, wp, lp);
+}
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+{
+    using DpiFn = BOOL(WINAPI *)(HANDLE);
+    auto dpiFn =
+        reinterpret_cast<DpiFn>(GetProcAddress(GetModuleHandleW(L"user32"), "SetProcessDpiAwarenessContext"));
+    if (dpiFn)
+        dpiFn(reinterpret_cast<HANDLE>(-4));
+    else
+        SetProcessDPIAware();
+    HANDLE mutex = CreateMutexW(nullptr, FALSE, L"Local\\WorkWellDesktopV2");
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        HWND other = FindWindowW(L"WorkWellMainV2", L"WorkWell");
+        if (other)
         {
-            return g_trayIcon->HandleTrayMessage(wParam, lParam);
+            ShowWindow(other, SW_RESTORE);
+            SetForegroundWindow(other);
         }
-        return DefWindowProc(hwnd, uMsg, wParam, lParam);
+        if (mutex)
+            CloseHandle(mutex);
+        return 0;
     }
-}
-
-bool InitApplication()
-{
-    WNDCLASSEXW wc = {};
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.lpfnWndProc = WindowProc;
-    wc.hInstance = g_hInstance;
-    wc.lpszClassName = CLASS_NAME;
-
-    if (!RegisterClassExW(&wc))
+    Gdiplus::GdiplusStartupInput input;
+    ULONG_PTR token;
+    if (Gdiplus::GdiplusStartup(&token, &input, nullptr) != Gdiplus::Ok)
     {
-        return false;
-    }
-
-    HWND hwnd = CreateWindowExW(
-        0,
-        CLASS_NAME,
-        L"WorkWell",
-        0,
-        0, 0, 0, 0,
-        HWND_MESSAGE,
-        NULL,
-        g_hInstance,
-        NULL
-    );
-
-    if (!hwnd)
-    {
-        return false;
-    }
-
-    g_timerManager = std::make_unique<TimerManager>();
-
-    // 加载保存的配置
-    TimerManager::Settings settings;
-    if (ConfigManager::Load(settings))
-    {
-        g_timerManager->SetSettings(settings);
-    }
-
-    g_breakWindow = std::make_unique<BreakWindow>(g_hInstance);
-    g_breakWindow->SetTimerManager(g_timerManager.get());
-    g_mainDialog = std::make_unique<MainDialog>(g_hInstance, g_timerManager.get());
-    g_trayIcon = std::make_unique<TrayIcon>(g_hInstance, hwnd, g_timerManager.get());
-
-    g_trayIcon->SetMainDialog(g_mainDialog.get());
-
-    g_timerManager->SetOnTick([trayIcon = g_trayIcon.get(), dialog = g_mainDialog.get()](int seconds, bool isActive) {
-        trayIcon->UpdateTimer(seconds, isActive);
-        dialog->UpdateCountdown(seconds);
-    });
-
-    g_timerManager->SetOnBreakStart([breakWindow = g_breakWindow.get(), trayIcon = g_trayIcon.get(), timerMgr = g_timerManager.get()]() {
-        trayIcon->SetBreakState(true);
-        // 根据番茄钟数决定休息时长
-        int completedPomodoros = timerMgr->GetCompletedPomodoros();
-        const auto& settings = timerMgr->GetSettings();
-        bool shouldUseLongBreak = (completedPomodoros > 0 && completedPomodoros % settings.pomodorosUntilLongBreak == 0);
-        int breakDuration = shouldUseLongBreak ? (settings.longBreakDuration / 60) : (settings.shortBreakDuration / 60);
-        breakWindow->Show(breakDuration);
-    });
-
-    g_timerManager->SetOnBreakEnd([breakWindow = g_breakWindow.get(), trayIcon = g_trayIcon.get()]() {
-        trayIcon->SetBreakState(false);
-        breakWindow->Hide();
-    });
-
-    g_timerManager->SetOnWarning([trayIcon = g_trayIcon.get()]() {
-        trayIcon->ShowWarning();
-    });
-
-    // 不自动启动，等待用户点击开始按钮
-    // g_timerManager->StartWork(25 * 60);
-
-    SetTimer(hwnd, 1, 1000, NULL);
-
-    return true;
-}
-
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
-{
-    g_hInstance = hInstance;
-
-    if (!InitApplication())
-    {
+        CloseHandle(mutex);
         return 1;
     }
-
-    MSG msg = {};
-    while (GetMessage(&msg, NULL, 0, 0))
+    INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_STANDARD_CLASSES | ICC_UPDOWN_CLASS};
+    InitCommonControlsEx(&controls);
+    WNDCLASSW wc{};
+    wc.hInstance = instance;
+    wc.lpfnWndProc = HostProc;
+    wc.lpszClassName = L"WorkWellHostV2";
+    RegisterClassW(&wc);
+    HWND host = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"WorkWellHost", WS_POPUP, 0, 0, 0, 0,
+                                nullptr, nullptr, instance, nullptr);
+    g_taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
+    g_timer = std::make_unique<TimerManager>();
+    TimerManager::Settings settings;
+    ConfigManager::Load(settings);
+    g_timer->SetSettings(settings);
+    g_break = std::make_unique<BreakWindow>(instance);
+    g_break->SetTimerManager(g_timer.get());
+    g_main = std::make_unique<MainDialog>(instance, g_timer.get());
+    g_tray = std::make_unique<TrayIcon>(instance, host, g_timer.get());
+    g_tray->SetMainDialog(g_main.get());
+    g_timer->SetOnTick(
+        [](int seconds, bool active)
+        {
+            g_tray->UpdateTimer(seconds, active);
+            g_main->UpdateCountdown(seconds);
+            g_break->Refresh();
+        });
+    g_timer->SetOnBreakStart(
+        []()
+        {
+            g_main->HideForBreak();
+            g_tray->SetBreakState(true);
+            g_break->Show(g_timer->Remaining());
+        });
+    g_timer->SetOnBreakEnd(
+        []()
+        {
+            g_break->Hide();
+            g_tray->SetBreakState(false);
+            g_main->ShowCompletion();
+        });
+    g_timer->SetOnWarning([]() { g_tray->ShowWarning(); });
+    g_timer->SetOnBreakDeferred(
+        []()
+        {
+            g_break->Hide();
+            g_tray->SetBreakState(false);
+            g_main->Show();
+        });
+    SetTimer(host, 1, 250, nullptr);
+    g_main->Show();
+    MSG msg{};
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0)
     {
+        if (g_break->Translate(&msg) || g_main->Translate(&msg))
+            continue;
         TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        DispatchMessageW(&msg);
     }
-
-    g_trayIcon.reset();
-    g_mainDialog.reset();
-    g_breakWindow.reset();
-    g_timerManager.reset();
-
+    g_tray.reset();
+    g_main.reset();
+    g_break.reset();
+    g_timer.reset();
+    Gdiplus::GdiplusShutdown(token);
+    if (mutex)
+        CloseHandle(mutex);
     return 0;
 }

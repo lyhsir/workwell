@@ -5,13 +5,14 @@
 
 class ConfigManager
 {
-public:
+  public:
     // 保存配置到文件
-    static bool Save(const TimerManager::Settings& settings, const std::wstring& filePath = L"WorkWell.config");
+    static bool Save(const TimerManager::Settings &settings, const std::wstring &filePath = L"");
 
     // 从文件加载配置
-    static bool Load(TimerManager::Settings& settings, const std::wstring& filePath = L"WorkWell.config");
+    static bool Load(TimerManager::Settings &settings, const std::wstring &filePath = L"");
 
-    // 获取默认配置文件路径（在程序目录）
+    // 配置和统计保存在当前用户的 LocalAppData/WorkWell 目录。
     static std::wstring GetConfigPath();
+    static std::wstring GetDataPath(const wchar_t *name);
 };
